@@ -3,6 +3,9 @@ package opcode
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 type Native struct {
@@ -43,4 +46,21 @@ func (p *Native) GetOpcode() uint8 {
 
 func (p *Native) GetOperands() []any {
 	return p.Operands
+}
+
+func (p *Native) String(color string, subroutines map[int]string) string {
+	var sb strings.Builder
+	style := lipgloss.NewStyle()
+	if color != "" {
+		style = style.Foreground(lipgloss.Color(color))
+	}
+	name := Names[p.GetOpcode()]
+	ops := p.GetOperands()
+	opstr := fmt.Sprintf("%s in=%d out=%d", ops[0], ops[1], ops[2])
+	offset := fmt.Sprintf("0x%04X", p.GetOffset())
+	name = functionNameStyle.Render(name)
+	offset = style.Render(offset)
+	opstr = style.Render(opstr)
+	sb.WriteString(offset + " " + name + " " + opstr)
+	return sb.String()
 }

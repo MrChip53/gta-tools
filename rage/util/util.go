@@ -65,3 +65,25 @@ func Decrypt(data []byte) error {
 
 	return nil
 }
+
+func Encrypt(data []byte) error {
+	if aesKey == nil {
+		return fmt.Errorf("AES key not set")
+	}
+	cipher, err := aes.NewCipher(aesKey)
+	if err != nil {
+		return err
+	}
+
+	blockSize := cipher.BlockSize()
+	for i := 0; i < len(data); i += blockSize {
+		if i+blockSize > len(data) {
+			break
+		}
+		for range 16 {
+			cipher.Encrypt(data[i:i+blockSize], data[i:i+blockSize])
+		}
+	}
+
+	return nil
+}

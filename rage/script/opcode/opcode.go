@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"strconv"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 const (
@@ -211,7 +213,25 @@ var Instructions = map[uint8]func(int, uint8, []byte) Instruction{
 	OP_CALL_NATIVE: func(offset int, opcode uint8, args []byte) Instruction {
 		return newNative(offset, opcode, args)
 	},
+	OP_JUMP: func(offset int, opcode uint8, args []byte) Instruction {
+		return NewBranch(offset, opcode, args)
+	},
+	OP_JUMP_FALSE: func(offset int, opcode uint8, args []byte) Instruction {
+		return NewBranch(offset, opcode, args)
+	},
+	OP_JUMP_TRUE: func(offset int, opcode uint8, args []byte) Instruction {
+		return NewBranch(offset, opcode, args)
+	},
+	OP_CALL: func(offset int, opcode uint8, args []byte) Instruction {
+		return NewBranch(offset, opcode, args)
+	},
 }
+
+var (
+	functionNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF"))
+	branchTargetStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF"))
+	highlightStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+)
 
 //go:embed native_new.dat
 var nativeNew string
@@ -246,6 +266,7 @@ type Opcode struct {
 	Opcode   uint8
 	Args     []byte
 	Operands []any
+	New      bool
 }
 
 type Instruction interface {
@@ -253,6 +274,7 @@ type Instruction interface {
 	GetOffset() int
 	GetOpcode() uint8
 	GetOperands() []any
+	String(color string, subroutines map[int]string) string
 }
 
 func GetInstructionLength(opcode, p1 uint8) int {

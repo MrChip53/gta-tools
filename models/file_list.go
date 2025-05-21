@@ -17,12 +17,6 @@ type FileSelectedMsg struct{ item listItem }
 func (m FileSelectedMsg) Item() listItem { return m.item }
 
 // TODO move to rage package
-type File struct {
-	Name     string
-	Data     []byte
-	TocEntry img.TocEntry
-}
-
 type listItem struct {
 	name     string
 	data     []byte
@@ -40,9 +34,9 @@ func (i listItem) Data() []byte {
 func (i listItem) FileType() rage.FileType { return i.fileType }
 func (i listItem) TocEntry() img.TocEntry  { return i.tocEntry }
 
-func newListItem(f File) list.Item {
-	t := rage.GetFileType(f.Name)
-	return listItem{name: f.Name, fileType: t, data: f.Data, tocEntry: f.TocEntry}
+func newListItem(f img.ImgEntry) list.Item {
+	t := rage.GetFileType(f.Name())
+	return listItem{name: f.Name(), fileType: t, data: f.Data(), tocEntry: f.Toc()}
 }
 
 type customDelegate struct{}
@@ -58,6 +52,7 @@ func (d customDelegate) Render(w io.Writer, m list.Model, index int, li list.Ite
 			pf = "> "
 		}
 		fmt.Fprint(w, itemStyle.Render(pf+li.FilterValue()))
+		return
 	}
 
 	if index == m.Index() {
@@ -81,10 +76,10 @@ type FileList struct {
 	active bool
 }
 
-func NewFileList(names []File) FileList {
+func NewFileList(img img.ImgFile) FileList {
 	var items []list.Item
 
-	for _, v := range names {
+	for _, v := range img.Entries() {
 		items = append(items, newListItem(v))
 	}
 

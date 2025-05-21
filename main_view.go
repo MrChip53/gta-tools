@@ -1,11 +1,15 @@
 package main
 
 import (
+	"fmt"
+	"hash/crc32"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/mrchip53/gta-tools/models"
 	"github.com/mrchip53/gta-tools/rage"
+	"github.com/mrchip53/gta-tools/rage/img"
 )
 
 var (
@@ -64,12 +68,15 @@ type model struct {
 
 	imgFileList      models.FileList
 	mainContentModel models.ScriptView
+
+	imgFile img.ImgFile
 }
 
 func initialModel() model {
+	img := img.LoadImgFile(imgBytes)
 	return model{
-		// TODO no globals
-		imgFileList:      models.NewFileList(files),
+		imgFile:          img,
+		imgFileList:      models.NewFileList(img),
 		mainContentModel: models.NewScriptView("", nil, 0, 0),
 	}
 }
@@ -115,10 +122,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.imgFileList.SetActive(m.focusedWindow == sidebar)
 			m.mainContentModel.SetActive(m.focusedWindow == mainContent)
+		case "s":
+			// save img file to disk
+			b := m.imgFile.Bytes()
+			bcrc := crc32.ChecksumIEEE(b)
+			origcrc := crc32.ChecksumIEEE(imgBytes)
+			if bcrc != origcrc {
+				panic("CRC32 checksum mismatch")
+			}
+			fmt.Printf("Saving img file to %s\n", imgPath)
 		}
 	case models.FileSelectedMsg:
 		if msg.Item().FileType() == rage.FileTypeScript {
 			m.mainContentModel = models.NewScriptView(msg.Item().Name(), msg.Item().Data(), m.mainWidth, m.mainHeight)
+			m.focusedWindow = mainContent
+			m.mainContentModel.SetActive(true)
+			m.imgFileList.SetActive(false)
 		}
 	}
 	if m.focusedWindow == sidebar {

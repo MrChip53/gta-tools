@@ -62,7 +62,8 @@ type RageScript struct {
 	Globals     []uint
 	Unsupported bool
 
-	Opcodes []opcode.Instruction
+	Opcodes     []opcode.Instruction
+	Subroutines map[int]string
 }
 
 func NewRageScript(name string, data []byte) RageScript {
@@ -104,6 +105,7 @@ func NewRageScript(name string, data []byte) RageScript {
 		Locals:      locals,
 		Globals:     globals,
 		Unsupported: compressed,
+		Subroutines: make(map[int]string),
 	}
 
 	script.Disassemble()
@@ -128,12 +130,24 @@ func (r *RageScript) Disassemble() {
 				ins = f(ptr, c, args)
 			}
 		}
+		if ins.GetOpcode() == opcode.OP_FN_BEGIN {
+			r.Subroutines[ptr] = fmt.Sprintf("sub_0x%04X", ptr)
+		}
 		r.Opcodes = append(r.Opcodes, ins)
 		ptr += l
 	}
 }
 
-func (r RageScript) String(y int, style lipgloss.Style, offset, height int) string {
+func (r *RageScript) InsertInstruction(offset int, opc uint8, args []byte) {
+	cb := make([]byte, len(r.Code)+len(args)+1)
+	copy(cb, r.Code[:offset])
+	data := append([]byte{opc}, args...)
+	copy(cb[offset:], data)
+	copy(cb[offset+len(data):], r.Code[offset:])
+	r.Code = cb
+}
+
+func (r RageScript) String(y int, offset, height int) string {
 	var sb strings.Builder
 
 	// sb.WriteString("Name: " + r.Name + "\n")
@@ -143,24 +157,43 @@ func (r RageScript) String(y int, style lipgloss.Style, offset, height int) stri
 		if i >= len(r.Opcodes) {
 			break
 		}
+
 		ins := r.Opcodes[i]
-		opc := ins.GetOpcode()
-		name := opcode.Names[opc]
-		if opc > 79 && opc <= 255 {
-			name = fmt.Sprintf("%s", opcode.Names[opcode.OP_PUSHD])
+
+		color := ""
+		if i == y {
+			color = "#FFFF00"
 		}
-		ops := ins.GetOperands()
-		opstr := ""
-		for j := range len(ops) {
-			opstr += fmt.Sprintf(" %v", ops[j])
+
+		str := ins.String(color, r.Subroutines)
+
+		context := ""
+		switch ins.(type) {
+		case *opcode.Branch:
+			style := lipgloss.NewStyle().Foreground(lipgloss.Color("#44FF44"))
+			context += style.Render("-> ")
+			next := "?"
+			for _, v := range r.Opcodes {
+				if v.GetOffset() == int(ins.GetOperands()[0].(uint32)) {
+					next = v.String("", r.Subroutines)
+					break
+				}
+			}
+			context += next
 		}
-		offset := fmt.Sprintf("0x%08X", ins.GetOffset())
-		name = opNameStyle.Render(name)
-		if y == i {
-			offset = highlightStyle.Render(offset)
-			opstr = highlightStyle.Render(opstr + " <-")
+
+		sb.WriteString(str)
+
+		if i == y {
+			style := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+			sb.WriteString(style.Render(" <-"))
 		}
-		sb.WriteString(offset + " " + name + " " + opstr + "\n")
+
+		if context != "" {
+			sb.WriteString(" " + context)
+		}
+
+		sb.WriteString("\n")
 	}
 
 	return sb.String()
