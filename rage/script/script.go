@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/mrchip53/gta-tools/rage/script/opcode"
 	"github.com/mrchip53/gta-tools/rage/util"
 )
 
@@ -14,6 +15,11 @@ const (
 	HEADER_MAGIC                      = 0x0d524353
 	HEADER_MAGIC_ENCRYPTED            = 0x0e726373
 	HEADER_MAGIC_ENCRYPTED_COMPRESSED = 0x0e726353
+)
+
+var (
+	highlightStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+	opNameStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF"))
 )
 
 type scriptHeader struct {
@@ -55,6 +61,8 @@ type RageScript struct {
 	Locals      []uint
 	Globals     []uint
 	Unsupported bool
+
+	Opcodes []opcode.Instruction
 }
 
 func NewRageScript(name string, data []byte) RageScript {
@@ -89,13 +97,39 @@ func NewRageScript(name string, data []byte) RageScript {
 		globals = append(globals, uint(binary.LittleEndian.Uint32(g[i*4:i*4+4])))
 	}
 
-	return RageScript{
+	script := RageScript{
 		Name:        name,
 		Header:      h,
 		Code:        code,
 		Locals:      locals,
 		Globals:     globals,
 		Unsupported: compressed,
+	}
+
+	script.Disassemble()
+
+	return script
+}
+
+func (r *RageScript) Disassemble() {
+	r.Opcodes = make([]opcode.Instruction, 0)
+	var ptr int
+	for ptr < len(r.Code) {
+		c := r.Code[ptr]
+		l := opcode.GetInstructionLength(c, r.Code[ptr+1])
+		args := make([]byte, l)
+		copy(args, r.Code[ptr+1:ptr+l])
+		var ins opcode.Instruction = opcode.NewInstruction(ptr, c, args)
+		if c > 0x4F && c <= 0xFF {
+			ins = opcode.NewPush(ptr, c, args)
+		} else {
+			f, ok := opcode.Instructions[c]
+			if ok {
+				ins = f(ptr, c, args)
+			}
+		}
+		r.Opcodes = append(r.Opcodes, ins)
+		ptr += l
 	}
 }
 
@@ -105,23 +139,28 @@ func (r RageScript) String(y int, style lipgloss.Style, offset, height int) stri
 	// sb.WriteString("Name: " + r.Name + "\n")
 	// sb.WriteString("Header:\n")
 	// sb.WriteString(fmt.Sprintf("%+v\n", r.Header))
-	var ptr int
-	iter := 0
-	for ptr < len(r.Code) {
-		opcode := r.Code[ptr]
-		if iter >= offset && iter < offset+height {
-			name := opNames[opcode]
-			if opcode > 79 && opcode <= 255 {
-				name = fmt.Sprintf("%s %d", opNames[OP_PUSHD], opcode-96)
-			}
-			fstr := fmt.Sprintf("0x%08X: 0x%02x - %s", ptr, opcode, name)
-			if iter == y {
-				fstr = style.Render(fstr + " <-")
-			}
-			sb.WriteString(fstr + "\n")
+	for i := offset; i < offset+height; i++ {
+		if i >= len(r.Opcodes) {
+			break
 		}
-		ptr += getInstructionLength(opcode, r.Code[ptr+1])
-		iter++
+		ins := r.Opcodes[i]
+		opc := ins.GetOpcode()
+		name := opcode.Names[opc]
+		if opc > 79 && opc <= 255 {
+			name = fmt.Sprintf("%s", opcode.Names[opcode.OP_PUSHD])
+		}
+		ops := ins.GetOperands()
+		opstr := ""
+		for j := range len(ops) {
+			opstr += fmt.Sprintf(" %v", ops[j])
+		}
+		offset := fmt.Sprintf("0x%08X", ins.GetOffset())
+		name = opNameStyle.Render(name)
+		if y == i {
+			offset = highlightStyle.Render(offset)
+			opstr = highlightStyle.Render(opstr + " <-")
+		}
+		sb.WriteString(offset + " " + name + " " + opstr + "\n")
 	}
 
 	return sb.String()

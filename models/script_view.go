@@ -1,6 +1,8 @@
 package models
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -81,6 +83,9 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 				m.codeOffset += m.vp.Height
 			}
 			m.Refresh()
+		case "enter":
+			op := m.script.Opcodes[m.highlightedLine]
+			fmt.Printf("Selected opcode: %+v\n", op)
 		}
 	}
 
