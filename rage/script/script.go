@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/mrchip53/gta-tools/rage/img"
 	"github.com/mrchip53/gta-tools/rage/script/opcode"
 	"github.com/mrchip53/gta-tools/rage/util"
 )
@@ -30,6 +31,22 @@ type scriptHeader struct {
 	ScriptFlags      int32
 	GlobalsSignature int32
 	CompressedSize   int32
+}
+
+func (h scriptHeader) Bytes() []byte {
+	buf := make([]byte, 28)
+	binary.LittleEndian.PutUint32(buf[0:4], h.Identifier)
+	binary.LittleEndian.PutUint32(buf[4:8], uint32(h.CodeSize))
+	binary.LittleEndian.PutUint32(buf[8:12], uint32(h.LocalVarCount))
+	binary.LittleEndian.PutUint32(buf[12:16], uint32(h.GlobalVarCount))
+	binary.LittleEndian.PutUint32(buf[16:20], uint32(h.ScriptFlags))
+	binary.LittleEndian.PutUint32(buf[20:24], uint32(h.GlobalsSignature))
+	if h.Identifier == HEADER_MAGIC_ENCRYPTED_COMPRESSED {
+		binary.LittleEndian.PutUint32(buf[24:28], uint32(h.CompressedSize))
+	} else {
+		buf = buf[:24]
+	}
+	return buf
 }
 
 func newScriptHeader(data []byte) (int32, scriptHeader) {
@@ -64,9 +81,12 @@ type RageScript struct {
 
 	Opcodes     []opcode.Instruction
 	Subroutines map[int]string
+
+	Entry *img.ImgEntry
 }
 
-func NewRageScript(name string, data []byte) RageScript {
+func NewRageScript(entry *img.ImgEntry) RageScript {
+	data := entry.Data()
 	s, h := newScriptHeader(data)
 
 	encrypted := h.Identifier == HEADER_MAGIC_ENCRYPTED
@@ -77,6 +97,7 @@ func NewRageScript(name string, data []byte) RageScript {
 		ed := data[s : s+h.CompressedSize]
 		cd := util.Decrypt(ed)
 		_ = cd
+		panic("compressed")
 	} else {
 		code = data[s : s+h.CodeSize]
 		l = data[s+h.CodeSize : s+h.CodeSize+h.LocalVarCount*4]
@@ -99,13 +120,14 @@ func NewRageScript(name string, data []byte) RageScript {
 	}
 
 	script := RageScript{
-		Name:        name,
+		Name:        entry.Name(),
 		Header:      h,
 		Code:        code,
 		Locals:      locals,
 		Globals:     globals,
 		Unsupported: compressed,
 		Subroutines: make(map[int]string),
+		Entry:       entry,
 	}
 
 	script.Disassemble()
@@ -145,14 +167,75 @@ func (r *RageScript) InsertInstruction(offset int, opc uint8, args []byte) {
 	copy(cb[offset:], data)
 	copy(cb[offset+len(data):], r.Code[offset:])
 	r.Code = cb
+	r.Entry.SetData(r.Bytes())
+}
+
+func (r *RageScript) RemoveInstruction(offset int) {
+	op := r.Opcodes[offset]
+	of := op.GetOffset()
+	opLen := op.GetLength()
+	cb := make([]byte, len(r.Code)-opLen)
+	copy(cb, r.Code[:of])
+	copy(cb[of:], r.Code[of+opLen:])
+	r.Code = cb
+	r.Entry.SetData(r.Bytes())
+}
+
+func (r *RageScript) Bytes() []byte {
+	headerBytes := r.Header.Bytes()
+
+	currentCode := make([]byte, len(r.Code))
+	copy(currentCode, r.Code)
+
+	needsEncryption := r.Header.Identifier == HEADER_MAGIC_ENCRYPTED || r.Header.Identifier == HEADER_MAGIC_ENCRYPTED_COMPRESSED
+
+	if needsEncryption {
+		util.Encrypt(currentCode)
+	}
+
+	// If the script was originally compressed (and is thus 'Unsupported' by current loading logic)
+	if r.Unsupported { // This implies r.Header.Identifier == HEADER_MAGIC_ENCRYPTED_COMPRESSED
+		// For compressed scripts, NewRageScript (if it didn't panic) would only provide decompressed code.
+		// Locals and globals are not parsed from the stream in that path.
+		// The output will be header + encrypted(decompressed_code).
+		// This will not match original CompressedSize, but it's the best representation possible.
+		panic("compressed")
+	}
+
+	localsData := make([]byte, int(r.Header.LocalVarCount)*4)
+	for i := 0; i < int(r.Header.LocalVarCount); i++ {
+		val := uint32(0)
+		if i < len(r.Locals) {
+			val = uint32(r.Locals[i])
+		}
+		binary.LittleEndian.PutUint32(localsData[i*4:(i+1)*4], val)
+	}
+
+	globalsData := make([]byte, int(r.Header.GlobalVarCount)*4)
+	for i := 0; i < int(r.Header.GlobalVarCount); i++ {
+		val := uint32(0)
+		if i < len(r.Globals) {
+			val = uint32(r.Globals[i])
+		}
+		binary.LittleEndian.PutUint32(globalsData[i*4:(i+1)*4], val)
+	}
+
+	if r.Header.Identifier == HEADER_MAGIC_ENCRYPTED {
+		util.Encrypt(localsData)
+		util.Encrypt(globalsData)
+	}
+
+	var result []byte
+	result = append(result, headerBytes...)
+	result = append(result, currentCode...)
+	result = append(result, localsData...)
+	result = append(result, globalsData...)
+	return result
 }
 
 func (r RageScript) String(y int, offset, height int) string {
 	var sb strings.Builder
 
-	// sb.WriteString("Name: " + r.Name + "\n")
-	// sb.WriteString("Header:\n")
-	// sb.WriteString(fmt.Sprintf("%+v\n", r.Header))
 	for i := offset; i < offset+height; i++ {
 		if i >= len(r.Opcodes) {
 			break

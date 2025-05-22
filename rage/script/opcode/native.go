@@ -48,6 +48,10 @@ func (p *Native) GetOperands() []any {
 	return p.Operands
 }
 
+func (p *Native) GetLength() int {
+	return GetInstructionLength(p.GetOpcode(), p.Args[0])
+}
+
 func (p *Native) String(color string, subroutines map[int]string) string {
 	var sb strings.Builder
 	style := lipgloss.NewStyle()

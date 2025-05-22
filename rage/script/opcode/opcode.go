@@ -275,6 +275,7 @@ type Instruction interface {
 	GetOpcode() uint8
 	GetOperands() []any
 	String(color string, subroutines map[int]string) string
+	GetLength() int
 }
 
 func GetInstructionLength(opcode, p1 uint8) int {

@@ -56,6 +56,10 @@ func (p *Push) GetOperands() []any {
 	return p.Operands
 }
 
+func (p *Push) GetLength() int {
+	return GetInstructionLength(p.GetOpcode(), p.Args[0])
+}
+
 func (p *Push) String(color string, subroutines map[int]string) string {
 	var sb strings.Builder
 	style := lipgloss.NewStyle()

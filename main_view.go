@@ -1,8 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"hash/crc32"
+	"os"
+	"path/filepath"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -70,14 +71,18 @@ type model struct {
 	mainContentModel models.ScriptView
 
 	imgFile img.ImgFile
+
+	statusBar models.StatusBar
 }
 
 func initialModel() model {
 	img := img.LoadImgFile(imgBytes)
+	sb := models.NewStatusBar()
 	return model{
 		imgFile:          img,
 		imgFileList:      models.NewFileList(img),
-		mainContentModel: models.NewScriptView("", nil, 0, 0),
+		mainContentModel: models.NewScriptView(nil, 0, 0),
+		statusBar:        sb,
 	}
 }
 
@@ -96,7 +101,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.statusHeight = 1
 
-		availableHeight := m.winHeight - m.statusHeight - docStyle.GetVerticalMargins()/2
+		availableHeight := m.winHeight - m.statusHeight - docStyle.GetVerticalMargins() // Adjusted for docStyle vertical margins
 
 		m.sideWidth = m.winWidth / 4
 		m.sideWidth = min(max(m.sideWidth, 20), 40)
@@ -107,7 +112,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mainHeight = availableHeight - sidebarStyle.GetVerticalFrameSize()
 		m.statusWidth = m.winWidth - docStyle.GetHorizontalMargins()/2
 
-		m.mainContentModel = models.NewScriptView("", nil, m.mainWidth, m.mainHeight)
+		m.mainContentModel = models.NewScriptView(nil, m.mainWidth, m.mainHeight)
 		m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
 		m.ready = true
 	case tea.KeyMsg:
@@ -123,18 +128,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.imgFileList.SetActive(m.focusedWindow == sidebar)
 			m.mainContentModel.SetActive(m.focusedWindow == mainContent)
 		case "s":
-			// save img file to disk
 			b := m.imgFile.Bytes()
-			bcrc := crc32.ChecksumIEEE(b)
-			origcrc := crc32.ChecksumIEEE(imgBytes)
-			if bcrc != origcrc {
-				panic("CRC32 checksum mismatch")
+			imgPathFolder := filepath.Dir(imgPath)
+			filePath := filepath.Join(imgPathFolder, "out.img")
+			err := os.WriteFile(filePath, b, 0644)
+			if err != nil {
+				panic(err)
 			}
-			fmt.Printf("Saving img file to %s\n", imgPath)
+			cmds = append(cmds, tea.Cmd(func() tea.Msg {
+				return models.AddStatusBarMessageMsg{
+					Text:     "Saved img file to disk",
+					Duration: 3 * time.Second,
+				}
+			}))
 		}
 	case models.FileSelectedMsg:
 		if msg.Item().FileType() == rage.FileTypeScript {
-			m.mainContentModel = models.NewScriptView(msg.Item().Name(), msg.Item().Data(), m.mainWidth, m.mainHeight)
+			m.mainContentModel = models.NewScriptView(msg.Item().Entry(), m.mainWidth, m.mainHeight)
 			m.focusedWindow = mainContent
 			m.mainContentModel.SetActive(true)
 			m.imgFileList.SetActive(false)
@@ -147,6 +157,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mainContentModel, cmd = m.mainContentModel.Update(msg)
 		cmds = append(cmds, cmd)
 	}
+
+	// Always update the status bar
+	m.statusBar, cmd = m.statusBar.Update(msg)
+	cmds = append(cmds, cmd)
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -171,10 +186,15 @@ func (m model) View() string {
 	}
 	sidebarContent := sbStyle.Render(sidebarContentStr)
 	// Build status bar view
+	statusBarText := m.statusBar.View()
+	statusBarView := statusBarInfoStyle.Width(m.statusWidth).Render(statusBarText)
+	if statusBarText == "" {
+		statusBarView = statusBarHelpStyle.Width(m.statusWidth).Render("q: quit | tab: switch focus | s: save")
+	}
 
 	// Combine views
 	mainView := lipgloss.JoinHorizontal(lipgloss.Top, sidebarContent, mainContentView)
-	// finalView := lipgloss.JoinVertical(lipgloss.Left, mainView, statusBarView)
+	finalView := lipgloss.JoinVertical(lipgloss.Left, mainView, statusBarView) // Combine main view and status bar
 
-	return docStyle.Render(mainView)
+	return docStyle.Render(finalView)
 }

@@ -3,12 +3,14 @@ package models
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/mrchip53/gta-tools/rage/img"
 	"github.com/mrchip53/gta-tools/rage/script"
 	"github.com/mrchip53/gta-tools/rage/script/opcode"
 )
@@ -39,15 +41,21 @@ type ScriptView struct {
 	listStyle lipgloss.Style
 }
 
-func NewScriptView(name string, data []byte, w, h int) ScriptView {
+func NewScriptView(entry *img.ImgEntry, w, h int) ScriptView {
 	vp := viewport.New(w/3*2, h-1)
+
+	if entry == nil {
+		return ScriptView{vp: vp}
+	}
+
+	data := entry.Data()
 
 	if data == nil {
 		vp.SetContent("No script selected")
 		return ScriptView{data: data, vp: vp}
 	}
 
-	script := script.NewRageScript(name, data)
+	script := script.NewRageScript(entry)
 	str := lipgloss.NewStyle().Width(w).Render(script.String(0, 0, h))
 	vp.SetContent(str)
 
@@ -177,6 +185,17 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 			m.script.InsertInstruction(offset, opcode.OP_PUSHS, []byte{0x39, 0x05})
 			m.script.Disassemble()
 			m.Refresh()
+		case "d":
+			m.script.RemoveInstruction(m.highlightedLine)
+			m.script.Disassemble()
+			m.Refresh()
+		case "t":
+			cmds = append(cmds, func() tea.Msg {
+				return AddStatusBarMessageMsg{
+					Text:     fmt.Sprintf("%+v %d", m.script.Entry.Toc(), len(m.script.Entry.Data())),
+					Duration: 5 * time.Second,
+				}
+			})
 		}
 	}
 

@@ -19,24 +19,18 @@ func (m FileSelectedMsg) Item() listItem { return m.item }
 // TODO move to rage package
 type listItem struct {
 	name     string
-	data     []byte
-	tocEntry img.TocEntry
+	entry    *img.ImgEntry
 	fileType rage.FileType
 }
 
-func (i listItem) FilterValue() string { return i.name }
-func (i listItem) Name() string        { return i.name }
-func (i listItem) Data() []byte {
-	d := make([]byte, len(i.data))
-	copy(d, i.data)
-	return d
-}
+func (i listItem) FilterValue() string     { return i.name }
+func (i listItem) Name() string            { return i.name }
+func (i listItem) Entry() *img.ImgEntry    { return i.entry }
 func (i listItem) FileType() rage.FileType { return i.fileType }
-func (i listItem) TocEntry() img.TocEntry  { return i.tocEntry }
 
-func newListItem(f img.ImgEntry) list.Item {
+func newListItem(f *img.ImgEntry) list.Item {
 	t := rage.GetFileType(f.Name())
-	return listItem{name: f.Name(), fileType: t, data: f.Data(), tocEntry: f.Toc()}
+	return listItem{name: f.Name(), fileType: t, entry: f}
 }
 
 type customDelegate struct{}

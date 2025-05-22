@@ -42,6 +42,10 @@ func (p *Branch) GetOperands() []any {
 	return p.Operands
 }
 
+func (p *Branch) GetLength() int {
+	return GetInstructionLength(p.GetOpcode(), p.Args[0])
+}
+
 func (p *Branch) String(color string, subroutines map[int]string) string {
 	var sb strings.Builder
 	style := lipgloss.NewStyle()
