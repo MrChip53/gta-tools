@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -18,6 +19,18 @@ type DisplayMessage struct {
 	DisplayUntil time.Time
 }
 
+type ActivateInputActionMsg struct {
+	ID     string
+	Prompt string
+}
+
+type SubmitInputActionMsg struct {
+	ID        string
+	InputText string
+}
+
+type CancelInputActionMsg struct{}
+
 type AddStatusBarMessageMsg struct {
 	Text     string
 	Duration time.Duration
@@ -25,6 +38,60 @@ type AddStatusBarMessageMsg struct {
 
 type RemoveStatusBarMessageMsg struct {
 	ID string
+}
+
+type InputAction struct {
+	id        string
+	prompt    string
+	textInput textinput.Model
+}
+
+func NewInputAction(id string, userPrompt string) *InputAction {
+	ti := textinput.New()
+	ti.Prompt = "❯ "
+	if userPrompt != "" {
+		if !strings.HasSuffix(userPrompt, " ") {
+			ti.Prompt = userPrompt + " "
+		} else {
+			ti.Prompt = userPrompt
+		}
+	}
+	ti.CharLimit = 256
+	ti.Width = 40
+	return &InputAction{
+		id:        id,
+		prompt:    userPrompt,
+		textInput: ti,
+	}
+}
+
+func (ia *InputAction) Init() tea.Cmd {
+	return ia.textInput.Focus()
+}
+
+func (ia *InputAction) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyEnter:
+			inputValue := ia.textInput.Value()
+			return ia, func() tea.Msg {
+				return SubmitInputActionMsg{ID: ia.id, InputText: inputValue}
+			}
+		case tea.KeyEsc:
+			return ia, func() tea.Msg {
+				return CancelInputActionMsg{}
+			}
+		}
+	}
+
+	updatedTi, tiCmd := ia.textInput.Update(msg)
+	ia.textInput = updatedTi
+	return ia, tiCmd
+}
+
+func (ia *InputAction) View() string {
+	return ia.textInput.View()
 }
 
 type StatusBar struct {
@@ -50,9 +117,24 @@ func (m StatusBar) Init() tea.Cmd {
 
 func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 	var cmds []tea.Cmd
-	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case ActivateInputActionMsg:
+		action := NewInputAction(msg.ID, msg.Prompt)
+		m.action = action
+		m.active = true
+		if initCmd := m.action.Init(); initCmd != nil {
+			cmds = append(cmds, initCmd)
+		}
+
+	case SubmitInputActionMsg:
+		m.action = nil
+		m.active = false
+
+	case CancelInputActionMsg:
+		m.action = nil
+		m.active = false
+
 	case AddStatusBarMessageMsg:
 		newMessage := DisplayMessage{
 			ID:           fmt.Sprintf("%d-%s", time.Now().UnixNano(), msg.Text), // Unique ID
@@ -65,7 +147,7 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 		timeoutCmd := tea.Tick(msg.Duration, func(t time.Time) tea.Msg {
 			return RemoveStatusBarMessageMsg{ID: messageID}
 		})
-		return m, timeoutCmd
+		cmds = append(cmds, timeoutCmd)
 
 	case RemoveStatusBarMessageMsg:
 		var newQueue []DisplayMessage
@@ -75,32 +157,25 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 			}
 		}
 		m.messageQueue = newQueue
-		return m, nil
 
 	case tea.KeyMsg:
-		if !m.active {
-			return m, nil
-		}
-		switch msg.String() {
-		case "esc":
+		if m.active && m.action != nil {
+			updatedAction, actionCmd := m.action.Update(msg)
+			m.action = updatedAction
+			if actionCmd != nil {
+				cmds = append(cmds, actionCmd)
+			}
+		} else if m.active && msg.String() == "esc" {
 			m.action = nil
 			m.active = false
-			return m, nil
-		default:
-			if m.action != nil {
-				m.action, cmd = m.action.Update(msg)
-				if cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-			}
-			// Else: Potentially handle other keys for status bar itself (e.g., activate action mode)
 		}
 
 	default:
 		if m.active && m.action != nil {
-			m.action, cmd = m.action.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
+			updatedAction, actionCmd := m.action.Update(msg)
+			m.action = updatedAction
+			if actionCmd != nil {
+				cmds = append(cmds, actionCmd)
 			}
 		}
 	}
@@ -132,4 +207,8 @@ func (m StatusBar) View() string {
 
 func (m *StatusBar) SetActive(active bool) {
 	m.active = active
+}
+
+func (m *StatusBar) HasAction() bool {
+	return m.active && m.action != nil
 }

@@ -233,6 +233,50 @@ func (r *RageScript) Bytes() []byte {
 	return result
 }
 
+func (r *RageScript) FindNextOpcode(searchTerm string, startIndex int, reverseSearch bool) int {
+	if len(r.Opcodes) == 0 {
+		return -1
+	}
+
+	normalizedSearchTerm := strings.ToLower(searchTerm)
+
+	if !reverseSearch {
+		for i := startIndex + 1; i < len(r.Opcodes); i++ {
+			ins := r.Opcodes[i]
+			opString := ins.String("", r.Subroutines)
+			if strings.Contains(strings.ToLower(opString), normalizedSearchTerm) {
+				return i
+			}
+		}
+
+		for i := 0; i <= startIndex; i++ {
+			ins := r.Opcodes[i]
+			opString := ins.String("", r.Subroutines)
+			if strings.Contains(strings.ToLower(opString), normalizedSearchTerm) {
+				return i
+			}
+		}
+	} else {
+		for i := startIndex - 1; i >= 0; i-- {
+			ins := r.Opcodes[i]
+			opString := ins.String("", r.Subroutines)
+			if strings.Contains(strings.ToLower(opString), normalizedSearchTerm) {
+				return i
+			}
+		}
+
+		for i := len(r.Opcodes) - 1; i >= startIndex; i-- {
+			ins := r.Opcodes[i]
+			opString := ins.String("", r.Subroutines)
+			if strings.Contains(strings.ToLower(opString), normalizedSearchTerm) {
+				return i
+			}
+		}
+	}
+
+	return -1
+}
+
 func (r RageScript) String(y int, offset, height int) string {
 	var sb strings.Builder
 

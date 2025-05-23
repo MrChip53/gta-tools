@@ -141,14 +141,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Duration: 3 * time.Second,
 				}
 			}))
-		case "n":
-			b, err := os.ReadFile("aaatest.sco")
-			if err != nil {
-				panic(err)
-			}
-			m.imgFile.AddEntry("aaatest.sco", b)
-			m.imgFileList = models.NewFileList(m.imgFile)
-			m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
+			// case "n":
+			// 	b, err := os.ReadFile("aaatest.sco")
+			// 	if err != nil {
+			// 		panic(err)
+			// 	}
+			// 	m.imgFile.AddEntry("aaatest.sco", b)
+			// 	m.imgFileList = models.NewFileList(m.imgFile)
+			// 	m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
 		}
 	case models.FileSelectedMsg:
 		if msg.Item().FileType() == rage.FileTypeScript {
@@ -158,17 +158,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.imgFileList.SetActive(false)
 		}
 	}
-	if m.focusedWindow == sidebar {
-		m.imgFileList, cmd = m.imgFileList.Update(msg)
-		cmds = append(cmds, cmd)
-	} else {
-		m.mainContentModel, cmd = m.mainContentModel.Update(msg)
-		cmds = append(cmds, cmd)
-	}
 
-	// Always update the status bar
 	m.statusBar, cmd = m.statusBar.Update(msg)
 	cmds = append(cmds, cmd)
+
+	if !m.statusBar.HasAction() {
+		if m.focusedWindow == sidebar {
+			m.imgFileList, cmd = m.imgFileList.Update(msg)
+			cmds = append(cmds, cmd)
+		} else {
+			m.mainContentModel, cmd = m.mainContentModel.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	}
 
 	return m, tea.Batch(cmds...)
 }

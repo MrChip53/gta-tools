@@ -31,6 +31,8 @@ type ScriptView struct {
 	highlightedLine int
 	codeOffset      int
 
+	searchText string
+
 	height int
 	width  int
 
@@ -116,7 +118,6 @@ func (m ScriptView) Init() tea.Cmd {
 
 func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 	var cmds []tea.Cmd
-	var cmd tea.Cmd
 
 	if !m.active {
 		return m, nil
@@ -126,38 +127,13 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "up":
-			m.highlightedLine--
-			if m.highlightedLine < 0 {
-				m.highlightedLine = 0
-			}
-
-			if m.highlightedLine < m.codeOffset {
-				m.codeOffset--
-			}
-			m.Refresh()
+			m.scroll(-1)
 		case "down":
-			m.highlightedLine++
-
-			if m.highlightedLine > m.codeOffset+m.vp.Height-1 {
-				m.codeOffset++
-			}
-			m.Refresh()
+			m.scroll(1)
 		case "pgup":
-			m.highlightedLine -= m.vp.Height
-			if m.highlightedLine < 0 {
-				m.highlightedLine = 0
-				m.codeOffset = 0
-			}
-			if m.highlightedLine < m.codeOffset {
-				m.codeOffset -= m.vp.Height
-			}
-			m.Refresh()
+			m.scroll(-m.vp.Height)
 		case "pgdown":
-			m.highlightedLine += m.vp.Height
-			if m.highlightedLine > m.codeOffset+m.vp.Height-1 {
-				m.codeOffset += m.vp.Height
-			}
-			m.Refresh()
+			m.scroll(m.vp.Height)
 		case "enter":
 			op := m.script.Opcodes[m.highlightedLine]
 			opc := op.GetOpcode()
@@ -174,6 +150,17 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 				}
 				m.Refresh()
 			}
+		case "/":
+			cmds = append(cmds, func() tea.Msg {
+				return ActivateInputActionMsg{
+					ID:     "search",
+					Prompt: "Search",
+				}
+			})
+		case "n":
+			m.jumpToNextSearch(false)
+		case "b":
+			m.jumpToNextSearch(true)
 		case "a":
 			nextOpIdx := m.highlightedLine + 1
 			var offset int
@@ -197,14 +184,37 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 				}
 			})
 		}
-	}
-
-	// m.vp, cmd = m.vp.Update(msg)
-	if cmd != nil {
-		cmds = append(cmds, cmd)
+	case SubmitInputActionMsg:
+		if msg.ID == "search" {
+			m.searchText = msg.InputText
+			m.jumpToNextSearch(false)
+		}
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *ScriptView) scroll(offset int) {
+	d := m.highlightedLine - m.codeOffset
+	m.highlightedLine += offset
+	if m.highlightedLine < 0 {
+		m.highlightedLine = 0
+	}
+	if m.highlightedLine > len(m.script.Opcodes)-1 {
+		m.highlightedLine = len(m.script.Opcodes) - 1
+	}
+	if m.highlightedLine < m.codeOffset || m.highlightedLine > m.codeOffset+m.vp.Height-1 {
+		m.codeOffset = max(m.highlightedLine-d, 0)
+	}
+	m.Refresh()
+}
+
+func (m *ScriptView) jumpToNextSearch(reverse bool) {
+	nextIdx := m.script.FindNextOpcode(m.searchText, m.highlightedLine, reverse)
+	if nextIdx != -1 {
+		m.scroll(nextIdx - m.highlightedLine)
+	}
+	m.Refresh()
 }
 
 func (m *ScriptView) Refresh() {
