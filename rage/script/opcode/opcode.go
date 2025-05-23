@@ -269,6 +269,14 @@ type Opcode struct {
 	New      bool
 }
 
+func (o *Opcode) SetOffset(offset int) {
+	o.Offset = offset
+}
+
+func (o *Opcode) GetArgs() []byte {
+	return o.Args
+}
+
 type Instruction interface {
 	Disassemble()
 	GetOffset() int
@@ -276,6 +284,8 @@ type Instruction interface {
 	GetOperands() []any
 	String(color string, subroutines map[int]string) string
 	GetLength() int
+	SetOffset(offset int)
+	GetArgs() []byte
 }
 
 func GetInstructionLength(opcode, p1 uint8) int {

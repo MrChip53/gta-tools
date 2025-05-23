@@ -27,6 +27,7 @@ func NewPush(offset int, opcode uint8, args []byte) *Push {
 }
 
 func (p *Push) Disassemble() {
+	p.Operands = make([]any, 0)
 	if p.Opcode.Opcode == OP_PUSHS {
 		p.Operands = append(p.Operands, binary.LittleEndian.Uint16(p.Args[0:2]))
 	} else if p.Opcode.Opcode == OP_PUSHF {
@@ -57,7 +58,11 @@ func (p *Push) GetOperands() []any {
 }
 
 func (p *Push) GetLength() int {
-	return GetInstructionLength(p.GetOpcode(), p.Args[0])
+	l := uint8(0)
+	if len(p.Args) > 0 {
+		l = p.Args[0]
+	}
+	return GetInstructionLength(p.GetOpcode(), l)
 }
 
 func (p *Push) String(color string, subroutines map[int]string) string {

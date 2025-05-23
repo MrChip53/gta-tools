@@ -83,6 +83,9 @@ type RageScript struct {
 	Subroutines map[int]string
 
 	Entry *img.ImgEntry
+
+	// Render options
+	showBytecode bool
 }
 
 func NewRageScript(entry *img.ImgEntry) RageScript {
@@ -130,18 +133,19 @@ func NewRageScript(entry *img.ImgEntry) RageScript {
 		Entry:       entry,
 	}
 
-	script.Disassemble()
+	script.disassemble()
 
 	return script
 }
 
-func (r *RageScript) Disassemble() {
+func (r *RageScript) disassemble() {
 	r.Opcodes = make([]opcode.Instruction, 0)
+	offsetToInstructionMap := make(map[int]opcode.Instruction)
 	var ptr int
 	for ptr < len(r.Code) {
 		c := r.Code[ptr]
 		l := opcode.GetInstructionLength(c, r.Code[ptr+1])
-		args := make([]byte, l)
+		args := make([]byte, l-1)
 		copy(args, r.Code[ptr+1:ptr+l])
 		var ins opcode.Instruction = opcode.NewInstruction(ptr, c, args)
 		if c > 0x4F && c <= 0xFF {
@@ -156,29 +160,131 @@ func (r *RageScript) Disassemble() {
 			r.Subroutines[ptr] = fmt.Sprintf("sub_0x%04X", ptr)
 		}
 		r.Opcodes = append(r.Opcodes, ins)
+		offsetToInstructionMap[ptr] = ins
 		ptr += l
+	}
+
+	for _, ins := range r.Opcodes {
+		if branchIns, ok := ins.(*opcode.Branch); ok {
+			targetOffset := branchIns.GetOperands()[0].(uint32)
+			if targetIns, found := offsetToInstructionMap[int(targetOffset)]; found {
+				branchIns.TargetInstruction = targetIns
+			}
+		}
 	}
 }
 
-func (r *RageScript) InsertInstruction(offset int, opc uint8, args []byte) {
-	cb := make([]byte, len(r.Code)+len(args)+1)
-	copy(cb, r.Code[:offset])
-	data := append([]byte{opc}, args...)
-	copy(cb[offset:], data)
-	copy(cb[offset+len(data):], r.Code[offset:])
-	r.Code = cb
+func (r *RageScript) rebuild() {
+	newCode := make([]byte, 0)
+	currentOffset := 0
+
+	for _, ins := range r.Opcodes {
+		ins.SetOffset(currentOffset)
+		currentOffset += ins.GetLength()
+	}
+
+	newCode = make([]byte, 0)
+	r.Subroutines = make(map[int]string)
+	for _, ins := range r.Opcodes {
+		if ins.GetOpcode() == opcode.OP_FN_BEGIN {
+			r.Subroutines[ins.GetOffset()] = fmt.Sprintf("sub_0x%04X", ins.GetOffset())
+		}
+		if branchIns, ok := ins.(*opcode.Branch); ok {
+			if branchIns.TargetInstruction != nil {
+				branchIns.UpdateTargetOffset(branchIns.TargetInstruction.GetOffset())
+			}
+		}
+
+		newCode = append(newCode, ins.GetOpcode())
+		newCode = append(newCode, ins.GetArgs()...)
+	}
+
+	r.Code = newCode
+	r.Header.CodeSize = int32(len(r.Code))
 	r.Entry.SetData(r.Bytes())
 }
 
-func (r *RageScript) RemoveInstruction(offset int) {
-	op := r.Opcodes[offset]
-	of := op.GetOffset()
-	opLen := op.GetLength()
-	cb := make([]byte, len(r.Code)-opLen)
-	copy(cb, r.Code[:of])
-	copy(cb[of:], r.Code[of+opLen:])
-	r.Code = cb
-	r.Entry.SetData(r.Bytes())
+func (r *RageScript) MoveInstruction(index int, offset int) {
+	if index < 0 || index >= len(r.Opcodes) {
+		fmt.Println("Error: MoveInstruction index out of bounds")
+		return
+	}
+
+	ins := r.Opcodes[index]
+	r.Opcodes = append(r.Opcodes[:index], r.Opcodes[index+1:]...)
+	r.Opcodes = append(r.Opcodes[:offset], append([]opcode.Instruction{ins}, r.Opcodes[offset:]...)...)
+
+	r.rebuild()
+}
+
+func (r *RageScript) DuplicateInstruction(index int) {
+	if index < 0 || index >= len(r.Opcodes) {
+		fmt.Println("Error: DuplicateInstruction index out of bounds")
+		return
+	}
+
+	originalIns := r.Opcodes[index]
+	originalOpcode := originalIns.GetOpcode()
+	originalArgs := originalIns.GetArgs()
+
+	newArgs := make([]byte, len(originalArgs))
+	copy(newArgs, originalArgs)
+
+	var newIns opcode.Instruction
+	tempOffset := originalIns.GetOffset()
+
+	if originalOpcode > 0x4F && originalOpcode <= 0xFF {
+		newIns = opcode.NewPush(tempOffset, originalOpcode, newArgs)
+	} else {
+		f, ok := opcode.Instructions[originalOpcode]
+		if ok {
+			newIns = f(tempOffset, originalOpcode, newArgs)
+		} else {
+			newIns = opcode.NewInstruction(tempOffset, originalOpcode, newArgs)
+		}
+	}
+
+	r.Opcodes = append(r.Opcodes[:index+1], append([]opcode.Instruction{newIns}, r.Opcodes[index+1:]...)...)
+
+	r.rebuild()
+}
+
+func (r *RageScript) EditInstruction(index int, newIns opcode.Instruction) {
+	if index < 0 || index >= len(r.Opcodes) {
+		fmt.Println("Error: EditInstruction index out of bounds")
+		return
+	}
+
+	r.Opcodes[index] = newIns
+
+	r.rebuild()
+}
+
+func (r *RageScript) InsertInstruction(index int, newIns opcode.Instruction) {
+	if index < 0 || index > len(r.Opcodes) {
+		fmt.Println("Error: InsertInstruction index out of bounds")
+		return
+	}
+
+	if newIns == nil {
+		fmt.Println("Error: InsertInstruction cannot insert a nil instruction")
+		return
+	}
+
+	r.Opcodes = append(r.Opcodes[:index], append([]opcode.Instruction{newIns}, r.Opcodes[index:]...)...)
+
+	r.rebuild()
+}
+
+func (r *RageScript) RemoveInstruction(index int) {
+	if index < 0 || index >= len(r.Opcodes) {
+		fmt.Println("Error: RemoveInstruction index out of bounds")
+		return
+	}
+
+	r.Opcodes = append(r.Opcodes[:index], r.Opcodes[index+1:]...)
+
+	r.rebuild()
 }
 
 func (r *RageScript) Bytes() []byte {
@@ -233,6 +339,13 @@ func (r *RageScript) Bytes() []byte {
 	return result
 }
 
+func (r RageScript) GetOffset(line int) int {
+	if line < 0 || line >= len(r.Opcodes) {
+		return -1
+	}
+	return r.Opcodes[line].GetOffset()
+}
+
 func (r *RageScript) FindNextOpcode(searchTerm string, startIndex int, reverseSearch bool) int {
 	if len(r.Opcodes) == 0 {
 		return -1
@@ -277,6 +390,10 @@ func (r *RageScript) FindNextOpcode(searchTerm string, startIndex int, reverseSe
 	return -1
 }
 
+func (r *RageScript) ToggleByteCode() {
+	r.showBytecode = !r.showBytecode
+}
+
 func (r RageScript) String(y int, offset, height int) string {
 	var sb strings.Builder
 
@@ -314,6 +431,13 @@ func (r RageScript) String(y int, offset, height int) string {
 		if i == y {
 			style := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
 			sb.WriteString(style.Render(" <-"))
+			if r.showBytecode {
+				strs := []string{fmt.Sprintf("%02X", ins.GetOpcode())}
+				for _, b := range ins.GetArgs() {
+					strs = append(strs, fmt.Sprintf("%02X", b))
+				}
+				sb.WriteString(style.Render(" [" + strings.Join(strs, " ") + "]"))
+			}
 		}
 
 		if context != "" {

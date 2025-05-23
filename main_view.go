@@ -117,7 +117,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q", "esc":
+		case "q", "esc":
+			if !m.statusBar.HasAction() {
+				return m, tea.Quit
+			}
+		case "ctrl+c":
 			return m, tea.Quit
 		case "tab":
 			if m.focusedWindow == sidebar {
@@ -127,28 +131,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.imgFileList.SetActive(m.focusedWindow == sidebar)
 			m.mainContentModel.SetActive(m.focusedWindow == mainContent)
-		case "s":
-			b := m.imgFile.Bytes()
-			imgPathFolder := filepath.Dir(imgPath)
-			filePath := filepath.Join(imgPathFolder, "out.img")
-			err := os.WriteFile(filePath, b, 0644)
+		case "]":
+			if !m.statusBar.HasAction() {
+				b := m.imgFile.Bytes()
+				imgPathFolder := filepath.Dir(imgPath)
+				filePath := filepath.Join(imgPathFolder, "out.img")
+				err := os.WriteFile(filePath, b, 0644)
+				if err != nil {
+					panic(err)
+				}
+				cmds = append(cmds, tea.Cmd(func() tea.Msg {
+					return models.AddStatusBarMessageMsg{
+						Text:     "Saved img file to disk",
+						Duration: 3 * time.Second,
+					}
+				}))
+			}
+		case "\\":
+			b, err := os.ReadFile("aaatest.sco")
 			if err != nil {
 				panic(err)
 			}
-			cmds = append(cmds, tea.Cmd(func() tea.Msg {
-				return models.AddStatusBarMessageMsg{
-					Text:     "Saved img file to disk",
-					Duration: 3 * time.Second,
-				}
-			}))
-			// case "n":
-			// 	b, err := os.ReadFile("aaatest.sco")
-			// 	if err != nil {
-			// 		panic(err)
-			// 	}
-			// 	m.imgFile.AddEntry("aaatest.sco", b)
-			// 	m.imgFileList = models.NewFileList(m.imgFile)
-			// 	m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
+			m.imgFile.AddEntry("mrchip.sco", b)
+			m.imgFileList = models.NewFileList(m.imgFile)
+			m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
 		}
 	case models.FileSelectedMsg:
 		if msg.Item().FileType() == rage.FileTypeScript {

@@ -49,7 +49,11 @@ func (p *Native) GetOperands() []any {
 }
 
 func (p *Native) GetLength() int {
-	return GetInstructionLength(p.GetOpcode(), p.Args[0])
+	l := uint8(0)
+	if len(p.Args) > 0 {
+		l = p.Args[0]
+	}
+	return GetInstructionLength(p.GetOpcode(), l)
 }
 
 func (p *Native) String(color string, subroutines map[int]string) string {

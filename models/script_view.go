@@ -162,19 +162,44 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 		case "b":
 			m.jumpToNextSearch(true)
 		case "a":
-			nextOpIdx := m.highlightedLine + 1
-			var offset int
-			if nextOpIdx >= len(m.script.Opcodes) {
-				offset = len(m.script.Code)
-			} else {
-				offset = m.script.Opcodes[nextOpIdx].GetOffset()
-			}
-			m.script.InsertInstruction(offset, opcode.OP_PUSHS, []byte{0x39, 0x05})
-			m.script.Disassemble()
+			offset := m.script.GetOffset(m.highlightedLine)
+			cmds = append(cmds, func() tea.Msg {
+				return ActivateOpcodeAndArgsInputMsg{
+					ID:     "insert",
+					Offset: offset,
+				}
+			})
+		case "e":
+			offset := m.script.GetOffset(m.highlightedLine)
+			cmds = append(cmds, func() tea.Msg {
+				return ActivateOpcodeAndArgsInputMsg{
+					ID:     "edit",
+					Offset: offset,
+				}
+			})
+		case "i":
+			cmds = append(cmds, func() tea.Msg {
+				return AddStatusBarMessageMsg{
+					Text:     fmt.Sprintf("%+v", m.script.Header),
+					Duration: 5 * time.Second,
+				}
+			})
+		case "?":
+			m.script.ToggleByteCode()
+			m.Refresh()
+		case "r":
+			m.script.RemoveInstruction(m.highlightedLine)
 			m.Refresh()
 		case "d":
-			m.script.RemoveInstruction(m.highlightedLine)
-			m.script.Disassemble()
+			m.script.DuplicateInstruction(m.highlightedLine)
+			m.Refresh()
+		case "m":
+			m.script.MoveInstruction(m.highlightedLine, m.highlightedLine+1)
+			m.highlightedLine++
+			m.Refresh()
+		case "M":
+			m.script.MoveInstruction(m.highlightedLine, m.highlightedLine-1)
+			m.highlightedLine--
 			m.Refresh()
 		case "t":
 			cmds = append(cmds, func() tea.Msg {
@@ -187,8 +212,17 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 	case SubmitInputActionMsg:
 		if msg.ID == "search" {
 			m.searchText = msg.InputText
-			m.jumpToNextSearch(false)
+			//m.jumpToNextSearch(false)
 		}
+	case OpcodeAndArgsInputResultMsg:
+		o := m.script.GetOffset(m.highlightedLine)
+		op := opcode.NewInstruction(o, msg.Opcode, msg.Args)
+		if msg.ID == "insert" {
+			m.script.InsertInstruction(m.highlightedLine, op)
+		} else if msg.ID == "edit" {
+			m.script.EditInstruction(m.highlightedLine, op)
+		}
+		m.Refresh()
 	}
 
 	return m, tea.Batch(cmds...)

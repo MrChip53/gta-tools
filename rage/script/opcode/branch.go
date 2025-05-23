@@ -10,6 +10,7 @@ import (
 
 type Branch struct {
 	Opcode
+	TargetInstruction Instruction
 }
 
 func NewBranch(offset int, opcode uint8, args []byte) *Branch {
@@ -20,6 +21,7 @@ func NewBranch(offset int, opcode uint8, args []byte) *Branch {
 			Args:     args,
 			Operands: make([]any, 0),
 		},
+		TargetInstruction: nil,
 	}
 	p.Disassemble()
 	return p
@@ -43,7 +45,17 @@ func (p *Branch) GetOperands() []any {
 }
 
 func (p *Branch) GetLength() int {
-	return GetInstructionLength(p.GetOpcode(), p.Args[0])
+	l := uint8(0)
+	if len(p.Args) > 0 {
+		l = p.Args[0]
+	}
+	return GetInstructionLength(p.GetOpcode(), l)
+}
+
+func (p *Branch) UpdateTargetOffset(newOffset int) {
+	newTarget := uint32(newOffset)
+	p.Operands[0] = newTarget
+	binary.LittleEndian.PutUint32(p.Args[0:4], newTarget)
 }
 
 func (p *Branch) String(color string, subroutines map[int]string) string {
