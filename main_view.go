@@ -141,6 +141,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Duration: 3 * time.Second,
 				}
 			}))
+		case "n":
+			b, err := os.ReadFile("aaatest.sco")
+			if err != nil {
+				panic(err)
+			}
+			m.imgFile.AddEntry("aaatest.sco", b)
+			m.imgFileList = models.NewFileList(m.imgFile)
+			m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
 		}
 	case models.FileSelectedMsg:
 		if msg.Item().FileType() == rage.FileTypeScript {

@@ -22,7 +22,15 @@ type ImgFile struct {
 
 func (f ImgFile) Entries() []*ImgEntry { return f.entries }
 
-func (f *ImgFile) AddEntry(e *ImgEntry) {
+func (f *ImgFile) AddEntry(name string, data []byte) {
+	e := &ImgEntry{
+		name: name,
+		data: data,
+		toc: TocEntry{
+			Flags:     550,
+			entrySize: int(f.header.TocEntrySize),
+		},
+	}
 	f.entries = append(f.entries, e)
 	sort.Slice(f.entries, func(i, j int) bool {
 		return f.entries[i].Name() < f.entries[j].Name()
