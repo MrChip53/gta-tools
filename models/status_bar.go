@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,10 @@ type SubmitInputActionMsg struct {
 	InputText string
 }
 
+type SubmitScriptFlagsMsg struct {
+	Flags int32
+}
+
 type CancelInputActionMsg struct{}
 
 type AddStatusBarMessageMsg struct {
@@ -44,6 +49,10 @@ type RemoveStatusBarMessageMsg struct {
 }
 
 type ActivateImportFileActionMsg struct {
+	ID string
+}
+
+type ActivateScriptFlagsActionMsg struct {
 	ID string
 }
 
@@ -178,6 +187,18 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 			cmds = append(cmds, initCmd)
 		}
 
+	case ActivateScriptFlagsActionMsg:
+		action := NewInputAction(msg.ID, "Enter Script Flags (integer):", func(ia *InputAction) string {
+			return "Enter an integer value for script flags. Press Enter to submit, Esc to cancel."
+		})
+		m.action = action
+		m.active = true
+		m.opcodeArgsState = nil
+		m.importFileState = nil
+		if initCmd := m.action.Init(); initCmd != nil {
+			cmds = append(cmds, initCmd)
+		}
+
 	case ActivateOpcodeAndArgsInputMsg:
 		m.opcodeArgsState = &OpcodeArgsState{ID: msg.ID, CurrentStep: 1, Offset: msg.Offset}
 		action := NewInputAction(msg.ID+"_opcode", "Enter Opcode:", func(ia *InputAction) string {
@@ -217,6 +238,32 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 		}
 
 	case SubmitInputActionMsg:
+		if m.action != nil {
+			actionID := m.action.(*InputAction).id
+			if actionID == "setScriptFlagsAction" {
+				flagsStr := strings.TrimSpace(msg.InputText)
+				var flags int64
+				var err error
+				if strings.HasPrefix(strings.ToLower(flagsStr), "0x") {
+					flags, err = strconv.ParseInt(flagsStr[2:], 16, 32)
+				} else {
+					flags, err = strconv.ParseInt(flagsStr, 10, 32)
+				}
+
+				if err != nil {
+					cmds = append(cmds, func() tea.Msg {
+						return AddStatusBarMessageMsg{Text: "Invalid integer format for flags.", Duration: 3 * time.Second}
+					})
+					return m, tea.Batch(cmds...)
+				}
+				m.action = nil
+				m.active = false
+				cmds = append(cmds, func() tea.Msg {
+					return SubmitScriptFlagsMsg{Flags: int32(flags)}
+				})
+				return m, tea.Batch(cmds...)
+			}
+		}
 		if m.opcodeArgsState != nil {
 			if m.opcodeArgsState.CurrentStep == 1 {
 				inputText := strings.TrimSpace(msg.InputText)

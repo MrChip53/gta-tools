@@ -174,7 +174,7 @@ func (r *RageScript) disassemble() {
 	}
 }
 
-func (r *RageScript) rebuild() {
+func (r *RageScript) Rebuild() {
 	newCode := make([]byte, 0)
 	currentOffset := 0
 
@@ -214,7 +214,7 @@ func (r *RageScript) MoveInstruction(index int, offset int) {
 	r.Opcodes = append(r.Opcodes[:index], r.Opcodes[index+1:]...)
 	r.Opcodes = append(r.Opcodes[:offset], append([]opcode.Instruction{ins}, r.Opcodes[offset:]...)...)
 
-	r.rebuild()
+	r.Rebuild()
 }
 
 func (r *RageScript) DuplicateInstruction(index int) {
@@ -246,7 +246,7 @@ func (r *RageScript) DuplicateInstruction(index int) {
 
 	r.Opcodes = append(r.Opcodes[:index+1], append([]opcode.Instruction{newIns}, r.Opcodes[index+1:]...)...)
 
-	r.rebuild()
+	r.Rebuild()
 }
 
 func (r *RageScript) EditInstruction(index int, newIns opcode.Instruction) {
@@ -257,7 +257,7 @@ func (r *RageScript) EditInstruction(index int, newIns opcode.Instruction) {
 
 	r.Opcodes[index] = newIns
 
-	r.rebuild()
+	r.Rebuild()
 }
 
 func (r *RageScript) InsertInstruction(index int, newIns opcode.Instruction) {
@@ -273,7 +273,7 @@ func (r *RageScript) InsertInstruction(index int, newIns opcode.Instruction) {
 
 	r.Opcodes = append(r.Opcodes[:index], append([]opcode.Instruction{newIns}, r.Opcodes[index:]...)...)
 
-	r.rebuild()
+	r.Rebuild()
 }
 
 func (r *RageScript) RemoveInstruction(index int) {
@@ -284,7 +284,7 @@ func (r *RageScript) RemoveInstruction(index int) {
 
 	r.Opcodes = append(r.Opcodes[:index], r.Opcodes[index+1:]...)
 
-	r.rebuild()
+	r.Rebuild()
 }
 
 func (r *RageScript) Bytes() []byte {

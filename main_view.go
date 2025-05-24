@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/mrchip53/gta-tools/models"
 	"github.com/mrchip53/gta-tools/rage"
 	"github.com/mrchip53/gta-tools/rage/img"
+	"github.com/mrchip53/gta-tools/rage/script"
 )
 
 var (
@@ -129,6 +131,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return models.ActivateImportFileActionMsg{ID: "importFile"}
 				})
 			}
+		case "e":
+			if m.focusedWindow == sidebar && !m.statusBar.HasAction() {
+				selectedItem := m.imgFileList.SelectedItem()
+				if selectedItem.Entry() != nil && selectedItem.FileType() == rage.FileTypeScript {
+					cmds = append(cmds, func() tea.Msg {
+						return models.ActivateScriptFlagsActionMsg{ID: "setScriptFlagsAction"}
+					})
+				} else {
+					cmds = append(cmds, func() tea.Msg {
+						return models.AddStatusBarMessageMsg{
+							Text:     "No script file selected or item is not a script.",
+							Duration: 3 * time.Second,
+						}
+					})
+				}
+			}
 		case "tab":
 			if m.focusedWindow == sidebar {
 				m.focusedWindow = mainContent
@@ -146,10 +164,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					panic(err)
 				}
+
 				cmds = append(cmds, tea.Cmd(func() tea.Msg {
 					return models.AddStatusBarMessageMsg{
 						Text:     "Saved img file to disk",
-						Duration: 3 * time.Second,
+						Duration: 5 * time.Second,
 					}
 				}))
 			}
@@ -181,6 +200,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.imgFile.RemoveEntry(msg.Index)
 		m.imgFileList = models.NewFileList(m.imgFile)
 		m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
+	case models.SubmitScriptFlagsMsg:
+		if m.focusedWindow == sidebar {
+			selectedListItem := m.imgFileList.SelectedItem()
+			if selectedListItem.Entry() != nil && selectedListItem.FileType() == rage.FileTypeScript {
+				entry := selectedListItem.Entry()
+				if entry != nil {
+					rs := script.NewRageScript(entry)
+					if !rs.Unsupported {
+						rs.Header.ScriptFlags = msg.Flags
+						rs.Rebuild()
+
+						cmds = append(cmds, func() tea.Msg {
+							return models.AddStatusBarMessageMsg{
+								Text:     fmt.Sprintf("Script '%s' flags set to %d (0x%X)", selectedListItem.Name(), msg.Flags, msg.Flags),
+								Duration: 3 * time.Second,
+							}
+						})
+					} else {
+						cmds = append(cmds, func() tea.Msg {
+							return models.AddStatusBarMessageMsg{
+								Text:     "Cannot set flags for unsupported/compressed script.",
+								Duration: 3 * time.Second,
+							}
+						})
+					}
+				}
+			}
+		}
 	case models.ImportFileActionMsg:
 		content, err := os.ReadFile(msg.HostPath)
 		if err != nil {

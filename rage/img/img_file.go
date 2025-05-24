@@ -27,7 +27,7 @@ func (f *ImgFile) AddEntry(name string, data []byte) {
 		name: name,
 		data: data,
 		toc: TocEntry{
-			Flags:     550,
+			Flags:     0,
 			entrySize: int(f.header.TocEntrySize),
 		},
 	}

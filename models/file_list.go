@@ -141,3 +141,10 @@ func (m *FileList) SetSize(w, h int) {
 func (m *FileList) SetActive(active bool) {
 	m.active = active
 }
+
+func (m FileList) SelectedItem() listItem {
+	if item, ok := m.list.SelectedItem().(listItem); ok {
+		return item
+	}
+	return listItem{}
+}
