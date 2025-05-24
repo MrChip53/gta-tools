@@ -4,6 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -50,6 +53,9 @@ func init() {
 }
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

@@ -264,7 +264,7 @@ func (m *ScriptView) Refresh() {
 func (m ScriptView) View() string {
 	subsList := m.subsList.View()
 	localsList := m.localsList.View()
-	globalsList := m.globalsList.View()
+	globalsList := ""
 	rightPane := lipgloss.JoinVertical(lipgloss.Left, m.listStyle.Render(subsList), m.listStyle.Render(localsList), m.listStyle.Render(globalsList))
 	bottomPane := lipgloss.JoinHorizontal(lipgloss.Top, m.vp.View(), rightPane)
 	str := lipgloss.JoinVertical(lipgloss.Center, m.script.Name, bottomPane)

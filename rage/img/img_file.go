@@ -41,6 +41,14 @@ func (f *ImgFile) AddEntry(name string, data []byte) {
 	f.rebuild()
 }
 
+func (f *ImgFile) RemoveEntry(idx int) {
+	f.entries = append(f.entries[:idx], f.entries[idx+1:]...)
+	for i, e := range f.entries {
+		e.idx = i
+	}
+	f.rebuild()
+}
+
 func (f *ImgFile) rebuild() {
 	entryCount := len(f.entries)
 	f.header.EntryCount = int32(entryCount)

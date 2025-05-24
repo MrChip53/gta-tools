@@ -12,6 +12,8 @@ import (
 	"github.com/mrchip53/gta-tools/rage/img"
 )
 
+type FileDeletedMsg struct{ Index int }
+
 type FileSelectedMsg struct{ item listItem }
 
 func (m FileSelectedMsg) Item() listItem { return m.item }
@@ -114,6 +116,13 @@ func (m FileList) Update(msg tea.Msg) (FileList, tea.Cmd) {
 			if ok {
 				cmds = append(cmds, func() tea.Msg {
 					return FileSelectedMsg{item}
+				})
+			}
+		case "delete":
+			item, ok := m.list.SelectedItem().(listItem)
+			if ok {
+				cmds = append(cmds, func() tea.Msg {
+					return FileDeletedMsg{item.entry.Index()}
 				})
 			}
 		}

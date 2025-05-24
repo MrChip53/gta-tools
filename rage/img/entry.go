@@ -18,3 +18,5 @@ func (e ImgEntry) Data() []byte {
 func (e ImgEntry) Toc() TocEntry { return e.toc }
 
 func (e *ImgEntry) SetData(data []byte) { e.data = data }
+
+func (e ImgEntry) Index() int { return e.idx }

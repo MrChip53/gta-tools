@@ -135,7 +135,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.statusBar.HasAction() {
 				b := m.imgFile.Bytes()
 				imgPathFolder := filepath.Dir(imgPath)
-				filePath := filepath.Join(imgPathFolder, "out.img")
+				filePath := filepath.Join(imgPathFolder, "script.img")
 				err := os.WriteFile(filePath, b, 0644)
 				if err != nil {
 					panic(err)
@@ -148,6 +148,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}))
 			}
 		case "\\":
+			b, err := os.ReadFile("aaass.sco")
+			if err != nil {
+				panic(err)
+			}
+			m.imgFile.AddEntry("startup.sco", b)
+			m.imgFileList = models.NewFileList(m.imgFile)
+			m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
+		case "=":
 			b, err := os.ReadFile("aaatest.sco")
 			if err != nil {
 				panic(err)
@@ -163,6 +171,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mainContentModel.SetActive(true)
 			m.imgFileList.SetActive(false)
 		}
+	case models.FileDeletedMsg:
+		m.imgFile.RemoveEntry(msg.Index)
+		m.imgFileList = models.NewFileList(m.imgFile)
+		m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
 	}
 
 	m.statusBar, cmd = m.statusBar.Update(msg)
