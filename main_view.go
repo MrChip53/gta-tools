@@ -126,7 +126,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "a":
-			if !m.statusBar.HasAction() {
+			if m.focusedWindow == sidebar && !m.statusBar.HasAction() {
 				cmds = append(cmds, func() tea.Msg {
 					return models.ActivateImportFileActionMsg{ID: "importFile"}
 				})
