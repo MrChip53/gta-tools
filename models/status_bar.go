@@ -43,6 +43,16 @@ type RemoveStatusBarMessageMsg struct {
 	ID string
 }
 
+type ActivateImportFileActionMsg struct {
+	ID string
+}
+
+type ImportFileActionMsg struct {
+	ID          string
+	HostPath    string
+	ArchivePath string
+}
+
 type InputAction struct {
 	id              string
 	prompt          string
@@ -124,6 +134,13 @@ type OpcodeArgsState struct {
 	Offset      int
 }
 
+// New state for file import
+type ImportFileState struct {
+	ID          string
+	CurrentStep int // 1 for host path, 2 for archive path
+	HostPath    string
+}
+
 type StatusBar struct {
 	action tea.Model
 
@@ -132,6 +149,7 @@ type StatusBar struct {
 	segments        []Segment
 	messageQueue    []DisplayMessage
 	opcodeArgsState *OpcodeArgsState
+	importFileState *ImportFileState
 }
 
 func NewStatusBar() StatusBar {
@@ -155,6 +173,7 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 		m.action = action
 		m.active = true
 		m.opcodeArgsState = nil
+		m.importFileState = nil
 		if initCmd := m.action.Init(); initCmd != nil {
 			cmds = append(cmds, initCmd)
 		}
@@ -182,6 +201,17 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 		})
 		m.action = action
 		m.active = true
+		m.importFileState = nil
+		if initCmd := m.action.Init(); initCmd != nil {
+			cmds = append(cmds, initCmd)
+		}
+
+	case ActivateImportFileActionMsg:
+		m.importFileState = &ImportFileState{ID: msg.ID, CurrentStep: 1}
+		action := NewInputAction(msg.ID+"_hostpath", "Enter host OS file path:", nil)
+		m.action = action
+		m.active = true
+		m.opcodeArgsState = nil // Clear other multi-step states
 		if initCmd := m.action.Init(); initCmd != nil {
 			cmds = append(cmds, initCmd)
 		}
@@ -304,6 +334,46 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 				cmds = append(cmds, resultCmd)
 				m.opcodeArgsState = nil
 			}
+		} else if m.importFileState != nil {
+			inputText := strings.TrimSpace(msg.InputText)
+			if m.importFileState.CurrentStep == 1 { // Submitted host OS path
+				if inputText == "" {
+					addMsgCmd := func() tea.Msg {
+						return AddStatusBarMessageMsg{Text: "Host OS file path cannot be empty", Duration: 3 * time.Second}
+					}
+					cmds = append(cmds, addMsgCmd)
+					return m, tea.Batch(cmds...)
+				}
+				m.importFileState.HostPath = inputText
+				m.importFileState.CurrentStep = 2
+				action := NewInputAction(m.importFileState.ID+"_archivepath", "Enter desired archive filename:", nil)
+				m.action = action
+				// No need to set m.active = true, it already is
+				if initCmd := m.action.Init(); initCmd != nil {
+					cmds = append(cmds, initCmd)
+				}
+			} else if m.importFileState.CurrentStep == 2 { // Submitted archive filename
+				if inputText == "" {
+					addMsgCmd := func() tea.Msg {
+						return AddStatusBarMessageMsg{Text: "Archive filename cannot be empty", Duration: 3 * time.Second}
+					}
+					cmds = append(cmds, addMsgCmd)
+					return m, tea.Batch(cmds...)
+				}
+				id := m.importFileState.ID
+				hostPath := m.importFileState.HostPath
+				resultCmd := func() tea.Msg {
+					return ImportFileActionMsg{
+						ID:          id,
+						HostPath:    hostPath,
+						ArchivePath: inputText,
+					}
+				}
+				cmds = append(cmds, resultCmd)
+				m.action = nil
+				m.active = false
+				m.importFileState = nil
+			}
 		} else {
 			originalSubmitCmd := func() tea.Msg {
 				return msg
@@ -318,6 +388,7 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 		m.action = nil
 		m.active = false
 		m.opcodeArgsState = nil
+		m.importFileState = nil
 
 	case AddStatusBarMessageMsg:
 		newMessage := DisplayMessage{

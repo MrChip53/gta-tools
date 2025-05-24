@@ -123,6 +123,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "ctrl+c":
 			return m, tea.Quit
+		case "a":
+			if !m.statusBar.HasAction() {
+				cmds = append(cmds, func() tea.Msg {
+					return models.ActivateImportFileActionMsg{ID: "importFile"}
+				})
+			}
 		case "tab":
 			if m.focusedWindow == sidebar {
 				m.focusedWindow = mainContent
@@ -175,6 +181,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.imgFile.RemoveEntry(msg.Index)
 		m.imgFileList = models.NewFileList(m.imgFile)
 		m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
+	case models.ImportFileActionMsg:
+		content, err := os.ReadFile(msg.HostPath)
+		if err != nil {
+			cmds = append(cmds, func() tea.Msg {
+				return models.AddStatusBarMessageMsg{
+					Text:     "Error reading file: " + err.Error(),
+					Duration: 5 * time.Second,
+				}
+			})
+		} else {
+			m.imgFile.AddEntry(msg.ArchivePath, content)
+			m.imgFileList = models.NewFileList(m.imgFile)
+			m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
+			cmds = append(cmds, func() tea.Msg {
+				return models.AddStatusBarMessageMsg{
+					Text:     "File '" + msg.ArchivePath + "' added to archive.",
+					Duration: 3 * time.Second,
+				}
+			})
+		}
 	}
 
 	m.statusBar, cmd = m.statusBar.Update(msg)
