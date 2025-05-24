@@ -161,7 +161,7 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 			m.jumpToNextSearch(false)
 		case "b":
 			m.jumpToNextSearch(true)
-		case "a":
+		case "i":
 			offset := m.script.GetOffset(m.highlightedLine)
 			cmds = append(cmds, func() tea.Msg {
 				return ActivateOpcodeAndArgsInputMsg{
@@ -177,7 +177,7 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 					Offset: offset,
 				}
 			})
-		case "i":
+		case "o":
 			cmds = append(cmds, func() tea.Msg {
 				return AddStatusBarMessageMsg{
 					Text:     fmt.Sprintf("%+v", m.script.Header),
