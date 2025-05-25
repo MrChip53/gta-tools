@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/mrchip53/gta-tools/models"
+	"github.com/mrchip53/gta-tools/models/statusbar"
 	"github.com/mrchip53/gta-tools/rage"
 	"github.com/mrchip53/gta-tools/rage/img"
 	"github.com/mrchip53/gta-tools/rage/script"
@@ -74,12 +75,12 @@ type model struct {
 
 	imgFile img.ImgFile
 
-	statusBar models.StatusBar
+	statusBar statusbar.Model
 }
 
 func initialModel() model {
 	img := img.LoadImgFile(imgBytes)
-	sb := models.NewStatusBar()
+	sb := statusbar.New()
 	return model{
 		imgFile:          img,
 		imgFileList:      models.NewFileList(img),
@@ -128,7 +129,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			if m.focusedWindow == sidebar && !m.statusBar.HasAction() {
 				cmds = append(cmds, func() tea.Msg {
-					return models.ActivateImportFileActionMsg{ID: "importFile"}
+					return statusbar.ActivateImportFileActionMsg{ID: "importFile"}
 				})
 			}
 		case "e":
@@ -136,11 +137,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				selectedItem := m.imgFileList.SelectedItem()
 				if selectedItem.Entry() != nil && selectedItem.FileType() == rage.FileTypeScript {
 					cmds = append(cmds, func() tea.Msg {
-						return models.ActivateScriptFlagsActionMsg{ID: "setScriptFlagsAction"}
+						return statusbar.ActivateScriptFlagsActionMsg{ID: "setScriptFlagsAction"}
 					})
 				} else {
 					cmds = append(cmds, func() tea.Msg {
-						return models.AddStatusBarMessageMsg{
+						return statusbar.AddStatusBarMessageMsg{
 							Text:     "No script file selected or item is not a script.",
 							Duration: 3 * time.Second,
 						}
@@ -166,28 +167,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				cmds = append(cmds, tea.Cmd(func() tea.Msg {
-					return models.AddStatusBarMessageMsg{
+					return statusbar.AddStatusBarMessageMsg{
 						Text:     "Saved img file to disk",
 						Duration: 5 * time.Second,
 					}
 				}))
 			}
-		case "\\":
-			b, err := os.ReadFile("aaass.sco")
-			if err != nil {
-				panic(err)
-			}
-			m.imgFile.AddEntry("startup.sco", b)
-			m.imgFileList = models.NewFileList(m.imgFile)
-			m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
-		case "=":
-			b, err := os.ReadFile("aaatest.sco")
-			if err != nil {
-				panic(err)
-			}
-			m.imgFile.AddEntry("mrchip.sco", b)
-			m.imgFileList = models.NewFileList(m.imgFile)
-			m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
 		}
 	case models.FileSelectedMsg:
 		if msg.Item().FileType() == rage.FileTypeScript {
@@ -200,7 +185,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.imgFile.RemoveEntry(msg.Index)
 		m.imgFileList = models.NewFileList(m.imgFile)
 		m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
-	case models.SubmitScriptFlagsMsg:
+	case statusbar.SubmitScriptFlagsMsg:
 		if m.focusedWindow == sidebar {
 			selectedListItem := m.imgFileList.SelectedItem()
 			if selectedListItem.Entry() != nil && selectedListItem.FileType() == rage.FileTypeScript {
@@ -212,14 +197,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						rs.Rebuild()
 
 						cmds = append(cmds, func() tea.Msg {
-							return models.AddStatusBarMessageMsg{
+							return statusbar.AddStatusBarMessageMsg{
 								Text:     fmt.Sprintf("Script '%s' flags set to %d (0x%X)", selectedListItem.Name(), msg.Flags, msg.Flags),
 								Duration: 3 * time.Second,
 							}
 						})
 					} else {
 						cmds = append(cmds, func() tea.Msg {
-							return models.AddStatusBarMessageMsg{
+							return statusbar.AddStatusBarMessageMsg{
 								Text:     "Cannot set flags for unsupported/compressed script.",
 								Duration: 3 * time.Second,
 							}
@@ -228,11 +213,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-	case models.ImportFileActionMsg:
+	case statusbar.ImportFileActionMsg:
 		content, err := os.ReadFile(msg.HostPath)
 		if err != nil {
 			cmds = append(cmds, func() tea.Msg {
-				return models.AddStatusBarMessageMsg{
+				return statusbar.AddStatusBarMessageMsg{
 					Text:     "Error reading file: " + err.Error(),
 					Duration: 5 * time.Second,
 				}
@@ -242,7 +227,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.imgFileList = models.NewFileList(m.imgFile)
 			m.imgFileList.SetSize(m.sideWidth, m.sideHeight-sidebarStyle.GetVerticalFrameSize())
 			cmds = append(cmds, func() tea.Msg {
-				return models.AddStatusBarMessageMsg{
+				return statusbar.AddStatusBarMessageMsg{
 					Text:     "File '" + msg.ArchivePath + "' added to archive.",
 					Duration: 3 * time.Second,
 				}

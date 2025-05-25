@@ -1,4 +1,4 @@
-package models
+package statusbar
 
 import (
 	"fmt"
@@ -150,7 +150,7 @@ type ImportFileState struct {
 	HostPath    string
 }
 
-type StatusBar struct {
+type Model struct {
 	action tea.Model
 
 	active bool
@@ -161,19 +161,19 @@ type StatusBar struct {
 	importFileState *ImportFileState
 }
 
-func NewStatusBar() StatusBar {
-	return StatusBar{
+func New() Model {
+	return Model{
 		active:       false,
 		segments:     make([]Segment, 0),
 		messageQueue: make([]DisplayMessage, 0),
 	}
 }
 
-func (m StatusBar) Init() tea.Cmd {
+func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -485,10 +485,11 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m StatusBar) View() string {
+func (m Model) View() string {
 	actionView := ""
 	actionDescription := ""
 	if m.active && m.action != nil {
+		fmt.Printf("action: %v\n", m.action)
 		actionView = m.action.View()
 		if inputAction, ok := m.action.(*InputAction); ok {
 			actionDescription = inputAction.Description()
@@ -526,10 +527,10 @@ func (m StatusBar) View() string {
 	return ""
 }
 
-func (m *StatusBar) SetActive(active bool) {
+func (m *Model) SetActive(active bool) {
 	m.active = active
 }
 
-func (m *StatusBar) HasAction() bool {
+func (m *Model) HasAction() bool {
 	return m.active && m.action != nil
 }

@@ -80,10 +80,8 @@ func (p *Push) String(color string, subroutines map[int]string) string {
 	for j := range len(ops) {
 		opstrs[j] = fmt.Sprintf("%v", ops[j])
 	}
-	offset := fmt.Sprintf("0x%04X", p.GetOffset())
 	name = functionNameStyle.Render(name)
-	offset = style.Render(offset)
 	opstr := style.Render(strings.Join(opstrs, " "))
-	sb.WriteString(offset + " " + name + " " + opstr)
+	sb.WriteString(name + " " + opstr)
 	return sb.String()
 }

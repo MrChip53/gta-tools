@@ -33,7 +33,7 @@ func readFileToBytes(path string) ([]byte, error) {
 	return b, nil
 }
 
-func init() {
+func main() {
 	var err error
 	flag.StringVar(&imgPath, "img", imgPath, "Path to the img file")
 	flag.StringVar(&exePath, "exe", exePath, "Path to the exe file")
@@ -50,9 +50,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-}
 
-func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()

@@ -65,10 +65,8 @@ func (p *Native) String(color string, subroutines map[int]string) string {
 	name := Names[p.GetOpcode()]
 	ops := p.GetOperands()
 	opstr := fmt.Sprintf("%s in=%d out=%d", ops[0], ops[1], ops[2])
-	offset := fmt.Sprintf("0x%04X", p.GetOffset())
 	name = functionNameStyle.Render(name)
-	offset = style.Render(offset)
 	opstr = style.Render(opstr)
-	sb.WriteString(offset + " " + name + " " + opstr)
+	sb.WriteString(name + " " + opstr)
 	return sb.String()
 }

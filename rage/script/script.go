@@ -21,6 +21,7 @@ const (
 var (
 	highlightStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
 	opNameStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF"))
+	markerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF"))
 )
 
 type scriptHeader struct {
@@ -84,6 +85,9 @@ type RageScript struct {
 
 	Entry *img.ImgEntry
 
+	localBytes  []byte
+	globalBytes []byte
+
 	// Render options
 	showBytecode bool
 }
@@ -113,24 +117,15 @@ func NewRageScript(entry *img.ImgEntry) RageScript {
 		}
 	}
 
-	var locals, globals []uint
-
-	for i := range h.LocalVarCount {
-		locals = append(locals, uint(binary.LittleEndian.Uint32(l[i*4:i*4+4])))
-	}
-	for i := range h.GlobalVarCount {
-		globals = append(globals, uint(binary.LittleEndian.Uint32(g[i*4:i*4+4])))
-	}
-
 	script := RageScript{
 		Name:        entry.Name(),
 		Header:      h,
 		Code:        code,
-		Locals:      locals,
-		Globals:     globals,
 		Unsupported: compressed,
 		Subroutines: make(map[int]string),
 		Entry:       entry,
+		localBytes:  l,
+		globalBytes: g,
 	}
 
 	script.disassemble()
@@ -308,23 +303,10 @@ func (r *RageScript) Bytes() []byte {
 		panic("compressed")
 	}
 
-	localsData := make([]byte, int(r.Header.LocalVarCount)*4)
-	for i := 0; i < int(r.Header.LocalVarCount); i++ {
-		val := uint32(0)
-		if i < len(r.Locals) {
-			val = uint32(r.Locals[i])
-		}
-		binary.LittleEndian.PutUint32(localsData[i*4:(i+1)*4], val)
-	}
-
-	globalsData := make([]byte, int(r.Header.GlobalVarCount)*4)
-	for i := 0; i < int(r.Header.GlobalVarCount); i++ {
-		val := uint32(0)
-		if i < len(r.Globals) {
-			val = uint32(r.Globals[i])
-		}
-		binary.LittleEndian.PutUint32(globalsData[i*4:(i+1)*4], val)
-	}
+	localsData := make([]byte, len(r.localBytes))
+	copy(localsData, r.localBytes)
+	globalsData := make([]byte, len(r.globalBytes))
+	copy(globalsData, r.globalBytes)
 
 	if r.Header.Identifier == HEADER_MAGIC_ENCRYPTED {
 		util.Encrypt(localsData)
@@ -394,8 +376,12 @@ func (r *RageScript) ToggleByteCode() {
 	r.showBytecode = !r.showBytecode
 }
 
-func (r RageScript) String(y int, offset, height int) string {
+func (r RageScript) String(y int, offset, height, marker1, marker2 int) string {
 	var sb strings.Builder
+
+	if marker2 != marker1 && marker2 == -1 {
+		marker2 = marker1
+	}
 
 	for i := offset; i < offset+height; i++ {
 		if i >= len(r.Opcodes) {
@@ -409,7 +395,27 @@ func (r RageScript) String(y int, offset, height int) string {
 			color = "#FFFF00"
 		}
 
+		offsetStr := fmt.Sprintf("0x%04X ", ins.GetOffset())
+
+		if i == marker1 || i == marker2 || (i > marker1 && i < marker2) {
+			offsetStr = markerStyle.Render(offsetStr)
+		}
+		sb.WriteString(offsetStr)
+
 		str := ins.String(color, r.Subroutines)
+		sb.WriteString(str)
+
+		if i == y {
+			style := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+			sb.WriteString(style.Render(" <-"))
+			if r.showBytecode {
+				strs := []string{fmt.Sprintf("%02X", ins.GetOpcode())}
+				for _, b := range ins.GetArgs() {
+					strs = append(strs, fmt.Sprintf("%02X", b))
+				}
+				sb.WriteString(style.Render(" [" + strings.Join(strs, " ") + "]"))
+			}
+		}
 
 		context := ""
 		switch ins.(type) {
@@ -425,21 +431,6 @@ func (r RageScript) String(y int, offset, height int) string {
 			}
 			context += next
 		}
-
-		sb.WriteString(str)
-
-		if i == y {
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
-			sb.WriteString(style.Render(" <-"))
-			if r.showBytecode {
-				strs := []string{fmt.Sprintf("%02X", ins.GetOpcode())}
-				for _, b := range ins.GetArgs() {
-					strs = append(strs, fmt.Sprintf("%02X", b))
-				}
-				sb.WriteString(style.Render(" [" + strings.Join(strs, " ") + "]"))
-			}
-		}
-
 		if context != "" {
 			sb.WriteString(" " + context)
 		}

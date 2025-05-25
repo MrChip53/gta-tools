@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/mrchip53/gta-tools/models/statusbar"
 	"github.com/mrchip53/gta-tools/rage/img"
 	"github.com/mrchip53/gta-tools/rage/script"
 	"github.com/mrchip53/gta-tools/rage/script/opcode"
@@ -32,6 +33,9 @@ type ScriptView struct {
 	codeOffset      int
 
 	searchText string
+
+	marker1 int
+	marker2 int
 
 	height int
 	width  int
@@ -58,7 +62,7 @@ func NewScriptView(entry *img.ImgEntry, w, h int) ScriptView {
 	}
 
 	script := script.NewRageScript(entry)
-	str := lipgloss.NewStyle().Width(w).Render(script.String(0, 0, h))
+	str := lipgloss.NewStyle().Width(w).Render(script.String(0, 0, h, -1, -1))
 	vp.SetContent(str)
 
 	boxHeight := (h-1)/3 - 2
@@ -109,6 +113,8 @@ func NewScriptView(entry *img.ImgEntry, w, h int) ScriptView {
 		height:      h,
 		width:       w,
 		listStyle:   bs,
+		marker1:     -1,
+		marker2:     -1,
 	}
 }
 
@@ -152,7 +158,7 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 			}
 		case "/":
 			cmds = append(cmds, func() tea.Msg {
-				return ActivateInputActionMsg{
+				return statusbar.ActivateInputActionMsg{
 					ID:     "search",
 					Prompt: "Search",
 				}
@@ -164,7 +170,7 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 		case "i":
 			offset := m.script.GetOffset(m.highlightedLine)
 			cmds = append(cmds, func() tea.Msg {
-				return ActivateOpcodeAndArgsInputMsg{
+				return statusbar.ActivateOpcodeAndArgsInputMsg{
 					ID:     "insert",
 					Offset: offset,
 				}
@@ -172,14 +178,14 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 		case "e":
 			offset := m.script.GetOffset(m.highlightedLine)
 			cmds = append(cmds, func() tea.Msg {
-				return ActivateOpcodeAndArgsInputMsg{
+				return statusbar.ActivateOpcodeAndArgsInputMsg{
 					ID:     "edit",
 					Offset: offset,
 				}
 			})
 		case "o":
 			cmds = append(cmds, func() tea.Msg {
-				return AddStatusBarMessageMsg{
+				return statusbar.AddStatusBarMessageMsg{
 					Text:     fmt.Sprintf("%+v", m.script.Header),
 					Duration: 5 * time.Second,
 				}
@@ -201,20 +207,33 @@ func (m ScriptView) Update(msg tea.Msg) (ScriptView, tea.Cmd) {
 			m.script.MoveInstruction(m.highlightedLine, m.highlightedLine-1)
 			m.highlightedLine--
 			m.Refresh()
+		case " ":
+			if m.marker1 == -1 {
+				m.marker1 = m.highlightedLine
+			} else if m.marker2 == -1 {
+				m.marker2 = m.highlightedLine
+				if m.marker1 > m.marker2 {
+					m.marker1, m.marker2 = m.marker2, m.marker1
+				}
+			} else {
+				m.marker1 = -1
+				m.marker2 = -1
+			}
+			m.Refresh()
 		case "t":
 			cmds = append(cmds, func() tea.Msg {
-				return AddStatusBarMessageMsg{
+				return statusbar.AddStatusBarMessageMsg{
 					Text:     fmt.Sprintf("%+v %d", m.script.Entry.Toc(), len(m.script.Entry.Data())),
 					Duration: 5 * time.Second,
 				}
 			})
 		}
-	case SubmitInputActionMsg:
+	case statusbar.SubmitInputActionMsg:
 		if msg.ID == "search" {
 			m.searchText = msg.InputText
 			//m.jumpToNextSearch(false)
 		}
-	case OpcodeAndArgsInputResultMsg:
+	case statusbar.OpcodeAndArgsInputResultMsg:
 		o := m.script.GetOffset(m.highlightedLine)
 		op := opcode.NewInstruction(o, msg.Opcode, msg.Args)
 		if msg.ID == "insert" {
@@ -257,16 +276,16 @@ func (m *ScriptView) Refresh() {
 		return
 	}
 
-	str := lipgloss.NewStyle().Width(m.vp.Width).Render(m.script.String(m.highlightedLine, m.codeOffset, m.vp.Height))
+	str := lipgloss.NewStyle().Width(m.vp.Width).Render(m.script.String(m.highlightedLine, m.codeOffset, m.vp.Height, m.marker1, m.marker2))
 	m.vp.SetContent(str)
 }
 
 func (m ScriptView) View() string {
 	subsList := m.subsList.View()
-	localsList := m.localsList.View()
-	globalsList := ""
-	rightPane := lipgloss.JoinVertical(lipgloss.Left, m.listStyle.Render(subsList), m.listStyle.Render(localsList), m.listStyle.Render(globalsList))
-	bottomPane := lipgloss.JoinHorizontal(lipgloss.Top, m.vp.View(), rightPane)
+	// localsList := m.localsList.View()
+	// globalsList := ""
+	// rightPane := lipgloss.JoinVertical(lipgloss.Left, m.listStyle.Render(subsList), m.listStyle.Render(localsList), m.listStyle.Render(globalsList))
+	bottomPane := lipgloss.JoinHorizontal(lipgloss.Top, m.vp.View(), m.listStyle.Render(subsList))
 	str := lipgloss.JoinVertical(lipgloss.Center, m.script.Name, bottomPane)
 	return str
 }

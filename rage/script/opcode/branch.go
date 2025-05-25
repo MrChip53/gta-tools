@@ -65,9 +65,7 @@ func (p *Branch) String(color string, subroutines map[int]string) string {
 		style = style.Foreground(lipgloss.Color(color))
 	}
 	text := p.Text(style, subroutines)
-	offset := fmt.Sprintf("0x%04X", p.GetOffset())
-	offset = style.Render(offset)
-	sb.WriteString(offset + " " + text)
+	sb.WriteString(text)
 	return sb.String()
 }
 
