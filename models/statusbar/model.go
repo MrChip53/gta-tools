@@ -2,15 +2,10 @@ package statusbar
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
-	"encoding/hex"
-
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mrchip53/gta-tools/rage/script/opcode"
 )
 
 type Segment struct {
@@ -62,69 +57,6 @@ type ImportFileActionMsg struct {
 	ArchivePath string
 }
 
-type InputAction struct {
-	id              string
-	prompt          string
-	textInput       textinput.Model
-	descriptionFunc func(*InputAction) string
-}
-
-func NewInputAction(id string, userPrompt string, descriptionFunc func(*InputAction) string) *InputAction {
-	ti := textinput.New()
-	ti.Prompt = "❯ "
-	if userPrompt != "" {
-		if !strings.HasSuffix(userPrompt, " ") {
-			ti.Prompt = userPrompt + " "
-		} else {
-			ti.Prompt = userPrompt
-		}
-	}
-	ti.CharLimit = 256
-	ti.Width = 40
-	return &InputAction{
-		id:              id,
-		prompt:          userPrompt,
-		textInput:       ti,
-		descriptionFunc: descriptionFunc,
-	}
-}
-
-func (ia *InputAction) Init() tea.Cmd {
-	return ia.textInput.Focus()
-}
-
-func (ia *InputAction) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEnter:
-			inputValue := ia.textInput.Value()
-			return ia, func() tea.Msg {
-				return SubmitInputActionMsg{ID: ia.id, InputText: inputValue}
-			}
-		case tea.KeyEsc:
-			return ia, func() tea.Msg {
-				return CancelInputActionMsg{}
-			}
-		}
-	}
-
-	updatedTi, tiCmd := ia.textInput.Update(msg)
-	ia.textInput = updatedTi
-	return ia, tiCmd
-}
-
-func (ia *InputAction) View() string {
-	return ia.textInput.View()
-}
-
-func (ia *InputAction) Description() string {
-	if ia.descriptionFunc != nil {
-		return ia.descriptionFunc(ia)
-	}
-	return ""
-}
-
 type ActivateOpcodeAndArgsInputMsg struct {
 	ID     string
 	Offset int
@@ -136,306 +68,89 @@ type OpcodeAndArgsInputResultMsg struct {
 	Args   []byte
 }
 
-type OpcodeArgsState struct {
-	ID          string
-	Opcode      uint8
-	CurrentStep int
-	Offset      int
-}
-
-// New state for file import
-type ImportFileState struct {
-	ID          string
-	CurrentStep int // 1 for host path, 2 for archive path
-	HostPath    string
-}
-
 type Model struct {
-	action tea.Model
+	currentAction Action
 
-	active bool
-
-	segments        []Segment
-	messageQueue    []DisplayMessage
-	opcodeArgsState *OpcodeArgsState
-	importFileState *ImportFileState
+	segments     []Segment
+	messageQueue []DisplayMessage
 }
 
 func New() Model {
 	return Model{
-		active:       false,
 		segments:     make([]Segment, 0),
 		messageQueue: make([]DisplayMessage, 0),
 	}
 }
 
 func (m Model) Init() tea.Cmd {
+	if m.currentAction != nil {
+		return m.currentAction.Init()
+	}
 	return nil
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	switch msg := msg.(type) {
-	case ActivateInputActionMsg:
-		action := NewInputAction(msg.ID, msg.Prompt, nil)
-		m.action = action
-		m.active = true
-		m.opcodeArgsState = nil
-		m.importFileState = nil
-		if initCmd := m.action.Init(); initCmd != nil {
-			cmds = append(cmds, initCmd)
+	if m.currentAction != nil {
+		var actionCmd tea.Cmd
+		m.currentAction, actionCmd = m.currentAction.Update(msg)
+		if actionCmd != nil {
+			cmds = append(cmds, actionCmd)
 		}
 
+		if m.currentAction != nil && m.currentAction.IsDone() {
+			resultMsg := m.currentAction.Result()
+			if resultMsg != nil {
+				switch res := resultMsg.(type) {
+				case SubmitScriptFlagsMsg:
+					cmds = append(cmds, func() tea.Msg { return res })
+				case OpcodeAndArgsInputResultMsg:
+					cmds = append(cmds, func() tea.Msg { return res })
+				case ImportFileActionMsg:
+					cmds = append(cmds, func() tea.Msg { return res })
+				case SubmitInputActionMsg:
+					cmds = append(cmds, func() tea.Msg { return res })
+				case ActionCancelledMsg:
+					// do nothing
+				default:
+					// Potentially log an unhandled result type
+				}
+			}
+			m.currentAction = nil
+		}
+		return m, tea.Batch(cmds...)
+	}
+
+	switch msg := msg.(type) {
 	case ActivateScriptFlagsActionMsg:
-		action := NewInputAction(msg.ID, "Enter Script Flags (integer):", func(ia *InputAction) string {
-			return "Enter an integer value for script flags. Press Enter to submit, Esc to cancel."
-		})
-		m.action = action
-		m.active = true
-		m.opcodeArgsState = nil
-		m.importFileState = nil
-		if initCmd := m.action.Init(); initCmd != nil {
+		m.currentAction = NewSetScriptFlagsAction(msg.ID, "Enter Script Flags (integer):")
+		if initCmd := m.currentAction.Init(); initCmd != nil {
 			cmds = append(cmds, initCmd)
 		}
 
 	case ActivateOpcodeAndArgsInputMsg:
-		m.opcodeArgsState = &OpcodeArgsState{ID: msg.ID, CurrentStep: 1, Offset: msg.Offset}
-		action := NewInputAction(msg.ID+"_opcode", "Enter Opcode:", func(ia *InputAction) string {
-			v := strings.TrimSpace(ia.textInput.Value())
-			if len(v) == 2 {
-				h, err := hex.DecodeString(v)
-				if err == nil {
-					if name, ok := opcode.Names[h[0]]; ok {
-						return fmt.Sprintf("%s (0x%02X)", name, h[0])
-					}
-				}
-			}
-
-			for k, vv := range opcode.Names {
-				if strings.EqualFold(v, vv) {
-					return fmt.Sprintf("%s (0x%02X)", vv, k)
-				}
-			}
-
-			return "Input opcode in hexadecimal format (e.g., 0A, FF) or name"
-		})
-		m.action = action
-		m.active = true
-		m.importFileState = nil
-		if initCmd := m.action.Init(); initCmd != nil {
+		m.currentAction = NewOpcodeAndArgsAction(msg.ID, msg.Offset)
+		if initCmd := m.currentAction.Init(); initCmd != nil {
 			cmds = append(cmds, initCmd)
 		}
 
 	case ActivateImportFileActionMsg:
-		m.importFileState = &ImportFileState{ID: msg.ID, CurrentStep: 1}
-		action := NewInputAction(msg.ID+"_hostpath", "Enter host OS file path:", nil)
-		m.action = action
-		m.active = true
-		m.opcodeArgsState = nil // Clear other multi-step states
-		if initCmd := m.action.Init(); initCmd != nil {
+		m.currentAction = NewImportFileAction(msg.ID)
+		if initCmd := m.currentAction.Init(); initCmd != nil {
 			cmds = append(cmds, initCmd)
 		}
 
-	case SubmitInputActionMsg:
-		if m.action != nil {
-			actionID := m.action.(*InputAction).id
-			if actionID == "setScriptFlagsAction" {
-				flagsStr := strings.TrimSpace(msg.InputText)
-				var flags int64
-				var err error
-				if strings.HasPrefix(strings.ToLower(flagsStr), "0x") {
-					flags, err = strconv.ParseInt(flagsStr[2:], 16, 32)
-				} else {
-					flags, err = strconv.ParseInt(flagsStr, 10, 32)
-				}
-
-				if err != nil {
-					cmds = append(cmds, func() tea.Msg {
-						return AddStatusBarMessageMsg{Text: "Invalid integer format for flags.", Duration: 3 * time.Second}
-					})
-					return m, tea.Batch(cmds...)
-				}
-				m.action = nil
-				m.active = false
-				cmds = append(cmds, func() tea.Msg {
-					return SubmitScriptFlagsMsg{Flags: int32(flags)}
-				})
-				return m, tea.Batch(cmds...)
-			}
-		}
-		if m.opcodeArgsState != nil {
-			if m.opcodeArgsState.CurrentStep == 1 {
-				inputText := strings.TrimSpace(msg.InputText)
-				if len(inputText) == 0 {
-					addMsgCmd := func() tea.Msg {
-						return AddStatusBarMessageMsg{Text: "Opcode cannot be empty", Duration: 3 * time.Second}
-					}
-					cmds = append(cmds, addMsgCmd)
-					return m, tea.Batch(cmds...)
-				}
-
-				op := []byte{}
-				var err error
-				for k, v := range opcode.Names {
-					if strings.EqualFold(v, inputText) {
-						op = []byte{uint8(k)}
-						break
-					}
-				}
-
-				if len(op) == 0 {
-					op, err = hex.DecodeString(inputText)
-					if err != nil || len(op) != 1 {
-						addMsgCmd := func() tea.Msg {
-							return AddStatusBarMessageMsg{Text: "Invalid Opcode hex (must be 1 byte, e.g., 00 to FF) or name", Duration: 3 * time.Second}
-						}
-						cmds = append(cmds, addMsgCmd)
-						// Keep the input active, similar to empty input case
-						// Potentially clear the input field: m.action.(*InputAction).textInput.SetValue("")
-						return m, tea.Batch(cmds...)
-					}
-				}
-
-				l := opcode.GetInstructionLength(op[0], 1)
-				if l == 1 {
-					id := m.opcodeArgsState.ID
-					resultCmd := func() tea.Msg {
-						return OpcodeAndArgsInputResultMsg{
-							ID:     id,
-							Opcode: op[0],
-							Args:   []byte{},
-						}
-					}
-					cmds = append(cmds, resultCmd)
-					m.action = nil
-					m.active = false
-					m.opcodeArgsState = nil
-					return m, tea.Batch(cmds...)
-				} else {
-					m.opcodeArgsState.Opcode = op[0]
-					m.opcodeArgsState.CurrentStep = 2
-					action := NewInputAction(m.opcodeArgsState.ID+"_args", "Enter Args (hex):", func(ia *InputAction) string {
-						op := strings.TrimSpace(ia.textInput.Value())
-						if op == "" {
-							return ""
-						}
-						h, err := hex.DecodeString(op)
-						if err != nil {
-							return "Invalid hex string"
-						}
-						l := opcode.GetInstructionLength(m.opcodeArgsState.Opcode, h[0])
-						if l != len(h)+1 {
-							return "Invalid args length"
-						}
-						opc := opcode.NewInstruction(m.opcodeArgsState.Offset, m.opcodeArgsState.Opcode, h)
-						return opc.String("#FFFF00", nil)
-					})
-					m.action = action
-					if initCmd := m.action.Init(); initCmd != nil {
-						cmds = append(cmds, initCmd)
-					}
-				}
-			} else if m.opcodeArgsState.CurrentStep == 2 {
-				inputText := strings.TrimSpace(msg.InputText)
-				var decodedArgs []byte
-				var err error
-				var h1 uint8
-				if inputText != "" {
-					decodedArgs, err = hex.DecodeString(inputText)
-					if err != nil {
-						addMsgCmd := func() tea.Msg {
-							return AddStatusBarMessageMsg{Text: "Invalid Args hex string", Duration: 3 * time.Second}
-						}
-						cmds = append(cmds, addMsgCmd)
-
-						return m, tea.Batch(cmds...)
-					}
-					h1 = decodedArgs[0]
-				} else {
-					decodedArgs = []byte{}
-				}
-
-				opc := m.opcodeArgsState.Opcode
-
-				argLength := opcode.GetInstructionLength(opc, h1) - 1
-				if argLength != len(decodedArgs) {
-					addMsgCmd := func() tea.Msg {
-						return AddStatusBarMessageMsg{Text: "Invalid Args length", Duration: 3 * time.Second}
-					}
-					cmds = append(cmds, addMsgCmd)
-					return m, tea.Batch(cmds...)
-				}
-
-				m.action = nil
-				m.active = false
-
-				id := m.opcodeArgsState.ID
-				resultCmd := func() tea.Msg {
-					return OpcodeAndArgsInputResultMsg{
-						ID:     id,
-						Opcode: opc,
-						Args:   decodedArgs,
-					}
-				}
-				cmds = append(cmds, resultCmd)
-				m.opcodeArgsState = nil
-			}
-		} else if m.importFileState != nil {
-			inputText := strings.TrimSpace(msg.InputText)
-			if m.importFileState.CurrentStep == 1 { // Submitted host OS path
-				if inputText == "" {
-					addMsgCmd := func() tea.Msg {
-						return AddStatusBarMessageMsg{Text: "Host OS file path cannot be empty", Duration: 3 * time.Second}
-					}
-					cmds = append(cmds, addMsgCmd)
-					return m, tea.Batch(cmds...)
-				}
-				m.importFileState.HostPath = inputText
-				m.importFileState.CurrentStep = 2
-				action := NewInputAction(m.importFileState.ID+"_archivepath", "Enter desired archive filename:", nil)
-				m.action = action
-				// No need to set m.active = true, it already is
-				if initCmd := m.action.Init(); initCmd != nil {
-					cmds = append(cmds, initCmd)
-				}
-			} else if m.importFileState.CurrentStep == 2 { // Submitted archive filename
-				if inputText == "" {
-					addMsgCmd := func() tea.Msg {
-						return AddStatusBarMessageMsg{Text: "Archive filename cannot be empty", Duration: 3 * time.Second}
-					}
-					cmds = append(cmds, addMsgCmd)
-					return m, tea.Batch(cmds...)
-				}
-				id := m.importFileState.ID
-				hostPath := m.importFileState.HostPath
-				resultCmd := func() tea.Msg {
-					return ImportFileActionMsg{
-						ID:          id,
-						HostPath:    hostPath,
-						ArchivePath: inputText,
-					}
-				}
-				cmds = append(cmds, resultCmd)
-				m.action = nil
-				m.active = false
-				m.importFileState = nil
-			}
-		} else {
-			originalSubmitCmd := func() tea.Msg {
-				return msg
-			}
-			cmds = append(cmds, originalSubmitCmd)
-
-			m.action = nil
-			m.active = false
+	case ActivateInputActionMsg:
+		m.currentAction = NewGeneralPurposeInputAction(msg.ID, msg.Prompt, "")
+		if initCmd := m.currentAction.Init(); initCmd != nil {
+			cmds = append(cmds, initCmd)
 		}
 
 	case CancelInputActionMsg:
-		m.action = nil
-		m.active = false
-		m.opcodeArgsState = nil
-		m.importFileState = nil
+		if m.currentAction != nil {
+			m.currentAction = nil
+		}
 
 	case AddStatusBarMessageMsg:
 		newMessage := DisplayMessage{
@@ -461,25 +176,38 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.messageQueue = newQueue
 
 	case tea.KeyMsg:
-		if m.active && m.action != nil {
-			updatedAction, actionCmd := m.action.Update(msg)
-			m.action = updatedAction
+		if m.currentAction != nil {
+			updatedAction, actionCmd := m.currentAction.Update(msg)
+			m.currentAction = updatedAction
 			if actionCmd != nil {
 				cmds = append(cmds, actionCmd)
 			}
-		} else if m.active && msg.String() == "esc" {
-			m.action = nil
-			m.active = false
+		} else if m.currentAction != nil && msg.String() == "esc" {
+			m.currentAction = nil
 		}
 
 	default:
-		if m.active && m.action != nil {
-			updatedAction, actionCmd := m.action.Update(msg)
-			m.action = updatedAction
-			if actionCmd != nil {
-				cmds = append(cmds, actionCmd)
-			}
+		// This default case for active action is now handled at the top
+		// if m.currentAction != nil
+		// If no action is active, this default case might handle other non-action messages
+	}
+
+	var newQueue []DisplayMessage
+	stillActiveMessages := false
+	now := time.Now()
+	for _, item := range m.messageQueue {
+		if now.Before(item.DisplayUntil) {
+			newQueue = append(newQueue, item)
+			stillActiveMessages = true
 		}
+	}
+	m.messageQueue = newQueue
+
+	if stillActiveMessages && len(m.messageQueue) > 0 {
+		// If there are still messages, ensure a tick is scheduled to remove the next one if not already handled by action
+		// This is a simplified re-check; ideally, AddStatusBarMessageMsg itself schedules the removal tick.
+		// The current AddStatusBarMessageMsg handler *does* schedule a RemoveStatusBarMessageMsg, so this might be redundant
+		// or could be a fallback if an action somehow clears messages without their specific timeout cmd.
 	}
 
 	return m, tea.Batch(cmds...)
@@ -488,12 +216,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 func (m Model) View() string {
 	actionView := ""
 	actionDescription := ""
-	if m.active && m.action != nil {
-		fmt.Printf("action: %v\n", m.action)
-		actionView = m.action.View()
-		if inputAction, ok := m.action.(*InputAction); ok {
-			actionDescription = inputAction.Description()
-		}
+	if m.currentAction != nil {
+		actionView = m.currentAction.View()
+		actionDescription = m.currentAction.Description()
 	}
 
 	finalView := actionView
@@ -527,10 +252,6 @@ func (m Model) View() string {
 	return ""
 }
 
-func (m *Model) SetActive(active bool) {
-	m.active = active
-}
-
 func (m *Model) HasAction() bool {
-	return m.active && m.action != nil
+	return m.currentAction != nil
 }
